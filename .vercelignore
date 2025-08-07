@@ -1,0 +1,10 @@
+node_modules
+*.zip
+*.rar
+*.7z
+public/uploads
+bubble-framework
+*.log
+.DS_Store
+.vscode
+.env
