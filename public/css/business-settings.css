@@ -1,0 +1,226 @@
+html, body {
+  height: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; /* optional: hides sideways scroll */
+}
+
+body {
+  overflow-y: auto;
+}
+
+main {
+  padding-bottom: 100px; /* adjust to make room for fixed footer */
+}
+
+.bottom-tab-bar {
+  margin-bottom: 20px;
+}
+
+/* Header Styling */
+.header {
+    background: linear-gradient(90deg, #EFB37C 0%, #C5F2DA 100%);
+    padding: 20px;
+    text-align: left;
+    font-size: 24px;
+    color: black;
+    box-shadow: 0px 4px 11.2px 0px rgba(0, 0, 0, 0.25);
+  }
+
+  .business-header
+  {margin-bottom:20px;
+     svg {
+    transform: translateY(5px) translateX(5px); /* Move the SVG down by 10px */
+     
+  }
+  
+  }
+  /*Log In pop Up */
+  .login-popup {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+  }
+  
+  .popup-content {
+    background: white;
+  padding: 30px;
+  border-radius: 10px;
+  text-align: center;
+  max-width: 300px;
+  }
+  /* This disables clicking anything behind the popup */
+body.popup-blocked *:not(.login-popup):not(.login-popup *) {
+    pointer-events: none;
+    user-select: none;
+    opacity: 0.4;
+  }
+  
+        /*Business Options*/
+  
+  .business-option
+  {background-color: #EEB57F;  
+    width:270px;
+    height:104;
+    color: black; 
+    padding: 13px 89px 13px 88px;  
+    border: none;  
+    border-radius: 20px;  
+    cursor: pointer; 
+    font-size: 16px;  
+    transition: background-color 0.3s ease;  
+  align-items:center;
+    justify-content:center;
+  }
+  .booking {
+    display: flex;
+    width: 900px; 
+    padding: 16px;
+    flex-direction: column;
+    justify-content: left;
+    align-items: left;
+    gap: 0px;
+    border-radius: 20px;
+    border: 2px solid #EEB57F;
+    background: #FFF;
+    margin-bottom: 20px;
+    
+  }
+  
+  .selling {
+    display: flex;
+    width: 900px;
+    padding: 16px;
+    flex-direction: column;
+    justify-content: left;
+    align-items: left;
+    gap: 0px;
+    border-radius: 20px;
+    border: 2px solid #EEB57F;
+    background: #FFF;
+    margin-bottom: 20px;
+  }
+  
+  
+  .link {
+    display: flex;
+    width: 900px;
+    padding: 16px;
+    flex-direction: column;
+    justify-content: left;
+    align-items: left;
+    gap: 0px;
+    border-radius: 20px;
+    border: 2px solid #EEB57F;
+    background: #FFF;
+    margin-bottom: 20px;
+  }
+  
+  
+  .course {
+    display: flex;
+    width: 900px;
+    padding: 16px;
+    flex-direction: column;
+    justify-content: left;
+    align-items: left;
+    gap: 0px;
+    border-radius: 20px;
+    border: 2px solid #EEB57F;
+    background: #FFF;
+    margin-bottom: 20px;
+  }
+  
+  
+  .owner {
+    display: flex;
+    width: 900px;
+    padding: 16px;
+    flex-direction: column;
+    justify-content: left;
+    align-items: left;
+    gap: 0px;
+    border-radius: 20px;
+    border: 2px solid #EEB57F;
+    background: #FFF;
+    margin-bottom: 20px;
+  }
+  
+  /*Business Breakdown*/
+  ul.scheduling
+  {list-style-type:none;
+    padding:0px;
+    
+    
+  }
+  ul li
+  {margin-bottom:10px;}
+  
+  ul.eccommerce
+  {list-style-type:none;
+   padding:0px;}
+  
+  ul.link-page
+  {list-style-type:none;
+   padding:0px;}
+  
+  ul.brick-and-mortar
+  {list-style-type:none;
+   padding:0px;}
+
+   .bottom-tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 65px;
+  background-color: white;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  border-top: 1px solid #ccc;
+  z-index: 999;
+}
+
+.tab-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-decoration: none;
+  color: black;
+  font-size: 12px;
+}
+
+.tab-item img {
+  width: 24px;
+  height: 24px;
+  display: block;
+  margin: 0 auto 3px;
+}
+
+.tab-item span {
+  display: block;
+  font-weight: 500;
+}
+
+.tab-item svg {
+  width: 35px;
+  height: 35px;
+  margin-bottom: 4px;
+}
+
+.tab-item.active {
+  color: orange; /* or whatever color you want */
+}
+
+.tab-item.active svg {
+  fill: orange; /* optional: makes the icon orange too */
+}

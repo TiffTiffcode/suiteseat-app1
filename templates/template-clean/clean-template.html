@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Booking Page Template 1</title>
+  <link rel="stylesheet" href="/templates/template-clean/clean.css" />
+
+</head>
+<body>
+
+
+
+  <!-- 🔝 Top Tab Bar -->
+  <div class="top-tab-bar">
+    <div class="left-tabs">
+      <button class="tab-button active">Default Calendar</button>
+     
+      <button class="tab-button" id="about-tab">About</button>
+      <button class="tab-button">Location</button>
+        <h1 id="business-header" style="text-align:center; margin-top: 10px;"></h1>
+    </div>
+    <div class="right-section">
+      <svg version="1.0" xmlns="http://www.w3.org/2000/svg"  width="300.000000pt" height="169.000000pt" viewBox="0 0 300.000000 169.000000"  preserveAspectRatio="xMidYMid meet">  <g transform="translate(0.000000,169.000000) scale(0.100000,-0.100000)" fill="#000000" stroke="none"> <path d="M1339 1493 c-102 -34 -194 -132 -225 -241 -33 -113 2 -261 81 -342 l34 -35 -67 -35 c-96 -49 -208 -163 -255 -260 -48 -98 -67 -176 -67 -273 0 -76 1 -80 34 -113 l34 -34 549 0 c481 0 551 2 571 16 98 68 53 335 -88 512 -46 59 -142 135 -208 164 l-43 19 37 41 c115 127 122 325 16 463 -39 52 -121 108 -182 125 -52 15 -168 11 -221 -7z m252 -86 c211 -109 206 -411 -8 -512 -141 -67 -308 -11 -381 129 -22 43 -27 64 -27 131 0 70 4 87 30 134 33 60 93 114 151 135 21 8 69 15 106 15 56 1 76 -4 129 -32z m-208 -604 c59 -14 78 -14 130 -4 34 7 75 15 90 18 20 4 50 -5 102 -31 140 -69 253 -213 290 -367 18 -77 19 -161 3 -177 -17 -17 -1059 -17 -1076 0 -7 7 -12 39 -12 72 0 188 124 382 299 469 85 43 84 42 174 20z"/> </g> </svg> 
+  
+      <button id="open-login-popup-btn" class="login-btn">Login</button>
+    </div>
+  </div>
+
+<!-- 🖼️ Hero Section -->
+<div class="hero-section">
+<img id="hero-image" alt="Business Hero Image" style="display: none;" />
+
+  
+    <div class="hero-overlay">
+  <h1 id="business-name">Loading...</h1>
+   <button id="template-book-now">Book Now</button>
+  </div>
+</div>
+
+<!-- 📅 Overlay Calendar Section -->
+<div id="calendar-overlay" class="hidden-overlay">
+  <h2>Choose Your Calendar</h2>
+  <div id="calendar-buttons"></div> <!-- We'll fill this with JS -->
+</div>
+
+<!-- 📅 temp Section -->
+<div id="about-popup" class="popup hidden">
+  <div class="popup-content">
+    <h2>About This Business</h2>
+    <p>This is a temporary popup to test your JS connection.</p>
+    <button id="close-popup">Close</button>
+  </div>
+</div>
+
+
+  <!-- 📅 Main Booking Section (populated by JS) -->
+  <div id="booking-root"></div>
+
+ <!-- 🔌 Scripts -->
+  <script src="/js/public-booking.js"></script> <!-- ✅ shared logic -->
+  <script src="/templates/template-clean/clean.js" defer></script>
+
+            <!-- ✅ tab bar logic -->
+
+</body>
+</html>

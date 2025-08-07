@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Suite Seat - Data Data Types</title>
+  <link rel="stylesheet" href="/css/datatype.css" />
+</head>
+<body>
+
+<!-- Tab Navigation -->
+<div class="tab-container">
+  <div class="tab active" id="tab1">Data Types</div>
+  <div class="tab" id="tab2">Fields</div>
+  <div class="tab" data-tab="3">Users</div> <!-- ✅ Moved this inside tab-container -->
+</div>
+
+<!-- Tab Content Wrapper -->
+<div class="tab-content">
+
+  <!-- Tab 1 - Data Types -->
+  <div class="content active" id="content1">
+    <section class="full-width">
+      <h2>Data Types</h2>
+
+      <form id="new-data-type-form">
+        <label for="new-data-type">New Type</label>
+        <input type="text" id="new-data-type" required />
+        <br /><br />
+        <button type="submit" class="create-new-type">Create New Type</button>
+      </form>
+<h3>
+  <span id="type-name"></span>
+  <button id="edit-datatype-name-btn">🖊</button>
+</h3>
+
+<!-- Hidden input + save for editing -->
+<div id="edit-datatype-wrapper" style="display:none;">
+  <input type="text" id="edit-datatype-input" />
+  <button id="save-datatype-name-btn">Save</button>
+</div>
+
+      <br /><br />
+
+      <h3>Data Types List</h3>
+      <ul id="dataTypeList"></ul>
+    </section>
+
+
+
+    
+  </div>
+  <div id="datatype-section">
+    <h2>All Data Types</h2>
+
+<!-- Data Type List -->
+<ul id="dataTypeList"></ul>
+
+<!-- Fields List -->
+<ul id="field-list"></ul>
+
+
+
+    <!-- List of data types -->
+    <ul id="dataTypeList"></ul>
+  </div>
+  <!-- Tab 2 - Fields -->
+  <div class="content" id="content2">
+    <h2>Fields for <span id="type-name">Nothing selected</span></h2>
+
+    <form id="field-form">
+      <label for="new-field">New Field</label>
+      <input type="text" id="new-field" placeholder="Enter field name" required />
+
+      <label for="field-type">Type</label>
+      <select id="field-type" required>
+        <optgroup label="Basic Types">
+          <option value="">Select Type</option>
+          <option value="Text">Text</option>
+          <option value="Number">Number</option>
+          <option value="Number Range">Number Range</option>
+          <option value="Date">Date</option>
+          <option value="Date Range">Date Range</option>
+         <option value="Time">Time</option>
+          <option value="Geographic Address">Geographic Address</option>
+          <option value="Yes/No">Yes/No</option>
+          <option value="Image">Image</option>
+          <option value="Boolean">Boolean</option>
+          <option value="File">File</option>
+          <option value="Dropdown">Dropdown</option>
+        </optgroup>
+        <optgroup label="Reference Types" id="reference-options">
+          <!-- Will be auto-filled by JS -->
+        </optgroup>
+      </select>
+
+      <br /><br />
+      <label>
+        <input type="checkbox" id="allow-multiple" />
+        Allow multiple values (e.g. list of items)
+      </label>
+
+      <button type="submit">Create New Field</button>
+    </form>
+
+    <br />
+    <h3>Fields List</h3>
+    <ul id="field-list"></ul>
+  </div>
+
+  <!-- ✅ Tab 3 - Users -->
+  <div class="content" id="content3">
+    <h2>Users</h2>
+    <table id="userTable">
+      <thead>
+        <tr>
+          <th>First Name</th>
+          <th>Last Name</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Action</th>
+          <th>Businesses</th>
+
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+</div>
+
+
+
+
+<script src="/js/datatype.js"></script>
+</body>
+</html>

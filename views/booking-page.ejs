@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Booking Page</title>
+
+  <!-- Flatpickr CSS (optional) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+
+  <!-- Default Booking Page CSS -->
+  <link rel="stylesheet" href="/css/booking-page.css" />
+</head>
+<body>
+
+
+<!-- Wrapper Start -->
+<div id="template-wrapper">
+
+  <!-- Header Section -->
+  <div id="template-header">
+    <header class="header">
+      <section class="header-group-container">
+        <div class="group">
+          <button id="open-login-popup-btn">Login</button>
+        </div>
+      </section>
+    </header>
+
+    <!-- Hero Image -->
+   <!-- Hero Image -->
+<div class="business-hero-wrapper">
+  <div class="businessheaderphoto">
+    <img id="hero-image" class="business-hero" src="" alt="Business Hero" />
+  </div>
+</div>
+
+  <!-- Booking Flow Section -->
+  <div id="booking-flow">
+
+    <!-- Calendars -->
+    <div class="calendar-list" id="calendar-list">
+      <h2>Calendars</h2>
+    </div>
+
+    <!-- Categories -->
+    <div class="category-section" id="category-section" style="display: none;">
+      <h2 class="section-title center-title">Select a Category</h2>
+      <div id="category-options"></div>
+    </div>
+
+    <!-- Services -->
+    <div class="services-section" id="services-section" style="display: none;">
+      <div class="service-header">
+      <span class="back-arrow" id="back-arrow">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+    <path fill-rule="evenodd" d="M1 8a7 7 0 1 0 14 0A7 7 0 0 0 1 8Zm10.25.75a.75.75 0 0 0 0-1.5H6.56l1.22-1.22a.75.75 0 0 0-1.06-1.06l-2.5 2.5a.75.75 0 0 0 0 1.06l2.5 2.5a.75.75 0 1 0 1.06-1.06L6.56 8.75h4.69Z" clip-rule="evenodd"/>
+  </svg>
+</span>
+
+        <h2 class="centered-service-title">Select a Service</h2>
+      </div>
+    <div class="multi-toggle-wrapper">
+  <h2 id="add-multi-toggle">➕ Add Multiple Services</h2>
+  <button id="clear-selected-services" style="margin-left: 10px; display: none;">❌ Clear Services</button>
+</div>
+
+      <button class="toggle-description" style="display: none;">Show All</button>
+      <div id="service-options"></div>
+    </div>
+
+    <!-- Availability -->
+    <div class="availability-section" id="availability-section" style="display: none;">
+      <span class="back-to-services-arrow" style="cursor: pointer;" id="back-arrow">  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+    <path fill-rule="evenodd" d="M1 8a7 7 0 1 0 14 0A7 7 0 0 0 1 8Zm10.25.75a.75.75 0 0 0 0-1.5H6.56l1.22-1.22a.75.75 0 0 0-1.06-1.06l-2.5 2.5a.75.75 0 0 0 0 1.06l2.5 2.5a.75.75 0 1 0 1.06-1.06L6.56 8.75h4.69Z" clip-rule="evenodd"/>
+  </svg></span>
+      <h2 class="h2-center-text">Select Date & Time</h2>
+
+      <!-- Custom Calendar -->
+      <div id="custom-calendar-container" class="calendar">
+        <div class="calendar-header">
+          <button id="prev-month">&#10094;</button>
+          <span id="month-year"></span>
+          <button id="next-month">&#10095;</button>
+        </div>
+        <div class="calendar-grid" id="calendar-grid"></div>
+      </div>
+
+      <!-- Time Slots Section (initially hidden) -->
+<div id="time-slots-container" style="display: none;">
+      <div class="time-group">
+        <h3>Morning</h3>
+        <div id="morning-slots" class="time-slots"></div>
+        <h3>Afternoon</h3>
+        <div id="afternoon-slots" class="time-slots"></div>
+        <h3>Evening</h3>
+        <div id="evening-slots" class="time-slots"></div>
+      </div>
+</div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Popups -->
+<div id="popup-wrapper">
+  <!-- Appointment Confirmation -->
+  <section id="popup-add-calendar" class="popup-add-business" style="display: none;">
+    <div class="business-section-header">
+      <div class="spacer"></div>
+      <h2 class="section-title">Appointment Confirmation</h2>
+      <button type="button" onclick="closeAddCalendarPopup()" style="float:right; border:none; background:none; font-size:18px;">&times;</button>
+    </div>
+
+    <div style="margin-top: 1rem;">
+      <strong>Date and Time:</strong>
+      <div id="confirm-date-time">Tuesday, April 29, 2025 at 10:30</div>
+    </div>
+
+    <div style="margin-top: 1.5rem;">
+      <div><strong>Service Provider:</strong> <span id="confirm-provider-name">HairGalore</span></div>
+   <div><strong>Location Name:</strong> <span id="confirm-location-name">N/A</span></div>
+<div><strong>Address:</strong> <span id="confirm-location-address">N/A</span></div>
+
+ <div>
+  <strong>Services:</strong>
+  <ul id="confirm-service-list" class="service-list"></ul>
+</div>
+
+<div><strong>Duration:</strong> <span id="confirm-duration">60 mins</span></div>
+<div id="confirm-price-row">
+  <strong>Total Price:</strong> <span id="confirm-total-price">$0.00</span>
+</div>
+
+      <div><strong>Special Note:</strong> <span id="confirm-note">This includes a Wash</span></div>
+    </div>
+
+    <!-- Stripe -->
+    <div id="payment-section" style="margin-top: 2rem;">
+      <label for="card-element"><strong>App Fee: $2.33</strong></label>
+      <div id="card-element" style="padding: 10px; border: 1px solid #ccc; border-radius: 4px;"></div>
+      <div id="card-errors" style="color: red; margin-top: 10px;"></div>
+    </div>
+
+    <div style="margin-top: 2rem;">
+      <button id="book-now-button" style="padding: 10px 20px; font-size: 16px;">Book Now</button>
+    </div>
+  </section>
+
+
+  <!-- Floating Summary -->
+<div id="floating-summary" style="display: none;">
+  <div class="summary-content">
+    <span id="summary-text">Selected: </span>
+    <button id="hide-summary-btn">✕</button>
+  </div>
+</div>
+
+<!-- Bring Back Button (initially hidden) -->
+<button id="show-summary-btn" style="display: none;" class="bring-back-summary">View Selection</button>
+
+
+  <!-- Login -->
+  <section id="popup-login" class="popup-add-business" style="display: none;">
+    <div class="business-section-header">
+      <div class="spacer"></div>
+      <h2 class="section-title">Login</h2>
+      <button type="button" onclick="closeLoginPopup()" style="float:right; border:none; background:none; font-size:18px;">&times;</button>
+    </div>
+
+    <form id="login-form">
+      <div class="form-group">
+        <label for="login-email">Email</label><br />
+        <input type="email" id="login-email" required placeholder="Enter your email" />
+      </div>
+
+      <div class="form-group">
+        <label for="login-password">Password</label><br />
+        <input type="password" id="login-password" required placeholder="Enter your password" />
+      </div>
+
+      <div class="button-center-wrapper">
+        <button type="submit" class="add-business-button">Log In</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<!-- Overlay for popups -->
+<div id="popup-overlay" class="popup-overlay" style="display: none;"></div>
+<!-- Set this by default -->
+<div id="popup-wrapper" style="display: none;">
+
+<!-- Footer -->
+<footer style="text-align: center; padding: 20px; font-size: 0.9rem; color: #777;">
+  &copy; 2025 Suite Seat. All rights reserved.
+</footer>
+
+<!-- Scripts -->
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://js.stripe.com/v3/"></script>
+<script src="/js/public-booking.js" defer></script>
+
+</body>
+</html>

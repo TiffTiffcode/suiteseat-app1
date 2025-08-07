@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Test Page</title>
+  <link rel="stylesheet" href="/css/test.css" />
+</head>
+<body>
+ <!-- Header -->
+  <header class="header">
+    <section class="header-group-container">
+      <div class="group left-group">Suite Seat</div>
+      <div class="group right-group"> 
+        <button id="open-login-popup-btn">Login</button>
+        <span id="login-status" style="margin-left: 20px;"></span>
+
+</div>
+  </header>
+
+  
+
+  
+                                            <!-- Date Header -->
+  <div class="date-header">
+    
+    <div class="left-section">
+         <button id="today-btn">This Week</button> 
+      <button id="prev-week">&lt;</button>
+  <button id="next-week">&gt;</button>
+    </div>
+    
+   <div class="middle-section">
+  <h4 id="month-year"></h4>
+ 
+</div>
+    
+   <div class="right-section">
+<button id="open-client-popup-btn">+ New Client</button>
+<button id="open-appointment-popup-btn">+ New Appointment</button>
+
+
+
+
+</div>
+  </div>
+    
+    <!-- Day of Week Section -->
+    <div class="week-days">
+  <div class="day-column">Sun<div class="day-date" data-day="0"></div></div>
+  <div class="day-column">Mon<div class="day-date" data-day="1"></div></div>
+  <div class="day-column">Tue<div class="day-date" data-day="2"></div></div>
+  <div class="day-column">Wed<div class="day-date" data-day="3"></div></div>
+  <div class="day-column">Thu<div class="day-date" data-day="4"></div></div>
+  <div class="day-column">Fri<div class="day-date" data-day="5"></div></div>
+  <div class="day-column">Sat<div class="day-date" data-day="6"></div></div>
+</div>
+
+               <!-- Hour Grid -->
+  <div class="calendar-grid">
+  <div class="hour-column"><!-- JS will inject times like 12AM, 1AM, ..., 11PM -->
+
+  </div>
+  <div class="time-slots-container"><!-- JS will inject 7 columns (Sun–Sat) with 15min lines -->
+     </div>
+</div>
+
+  
+  <!-- Login Popup -->
+<div id="popup-login" class="popup" style="display: none;">
+  <form id="login-form">
+     <button type="button" onclick="closeLoginPopup()" style="float:right; border:none; background:none; font-size:18px;">&times; X</button>
+    <h2>Login</h2>
+    <input type="email" id="login-email" placeholder="Email" required />
+    <input type="password" id="login-password" placeholder="Password" required />
+    <button type="submit">Login</button>
+  </form>
+</div>
+  
+  <!-- Add Client Popup -->
+<div id="popup-client" class="popup" style="display: none;">
+<div class="popup-header">
+      <button type="button" onclick="closeClientPopup()" class="close-btn">&times;</button>
+</div>
+  
+
+  <form id="add-client-form">
+    <h2>Add Client</h2>
+    <input type="text" id="client-name" placeholder="Client Name" required />
+    <input type="email" id="client-email" placeholder="Email" />
+    <input type="tel" id="client-phone" placeholder="Phone" />
+    <select id="client-business" required></select>
+    <button type="submit">Save Client</button>
+    </form>
+</div>
+
+  <!-- Appointment Popup -->
+<div id="popup-appointment" class="popup" style="display: none;">
+  <form id="appointment-form">
+        <div class="popup-header">
+      <button type="button" onclick="closeAppointmentPopup()" class="close-btn">&times;</button>
+    </div>
+
+    <h2>Book Appointment</h2>
+    <select id="appt-business" required></select>
+    <select id="appt-client" required></select>
+    <select id="appt-service" required></select>
+    <input type="date" id="appt-date" required />
+    <input type="time" id="appt-time" required />
+    <input type="number" id="appt-duration" placeholder="Duration (mins)" required />
+    <button type="submit">Book</button>
+    <button type="button" onclick="closeAppointmentPopup()">❌ Close</button>
+  </form>
+</div>
+
+<!-- Edit Appointment Popup -->
+<div id="edit-popup" class="popup" style="display: none;">
+  <form id="edit-form">
+        <div class="popup-header">
+      <button type="button" onclick="closeEditPopup()" class="close-btn">&times;</button>
+    </div>
+
+    <h2>Edit Appointment</h2>
+
+    <input type="hidden" id="edit-appt-id" />
+
+    <select id="edit-business" required></select>
+    <select id="edit-client" required></select>
+    <select id="edit-service" required></select>
+
+    <input type="date" id="edit-date" required />
+    <input type="time" id="edit-time" required />
+    <input type="number" id="edit-duration" placeholder="Duration (mins)" required />
+
+    <button type="submit">Update</button>
+    <button type="button" onclick="closeEditPopup()">❌ Close</button>
+  </form>
+</div>
+
+<div id="popup-overlay" class="popup-overlay" style="display: none;"></div>
+
+  <script src="/js/test.js"></script>
+</body>
+</html>

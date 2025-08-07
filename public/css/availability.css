@@ -1,0 +1,705 @@
+html, body {
+  height: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; /* optional: hides sideways scroll */
+}
+
+body {
+  overflow-y: auto;
+}
+
+main {
+  padding-bottom: 100px; /* adjust to make room for fixed footer */
+}
+
+
+
+/* Header Styling */
+.header {
+    background: linear-gradient(90deg, #EFB37C 0%, #C5F2DA 100%);
+    padding: 20px;
+    text-align: left;
+    font-size: 24px;
+    color: black;
+    box-shadow: 0px 4px 11.2px 0px rgba(0, 0, 0, 0.25);
+  }
+  
+  
+.container {
+  display: flex;
+  gap: 30px;
+  padding: 20px;
+    width: 100%;
+}
+
+.sidebar {
+  width: 250px;
+  transition: transform all 0.3s ease;
+  position: relative;
+  background: #fff;
+  z-index: 10;
+}
+
+.sidebar.hidden {
+  display: none; /* or visibility: hidden if you want animation */
+    width: 0;
+  overflow: hidden;
+}
+
+.active-tab {
+  background-color: #f2f2f2;
+  font-weight: bold;
+}
+
+
+.content-area {
+
+    flex-grow: 1;
+  transition: all 0.3s ease;
+  padding-left: 10px; /* or use margin-left if needed */
+}
+
+
+.popup-overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+}
+
+/* Actual popup styling */
+.popup-add-business {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 30px;
+  border-radius: 12px;
+  z-index: 1000;
+  box-shadow: 0px 10px 25px rgba(0, 0, 0, 0.2);
+  width: 90%;
+  max-width: 400px;
+}
+
+.main-content {
+  flex: 1;
+  padding: 10px;
+}
+
+/* .chooseBusiness*/
+.chooseBusiness {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.calendarOptions
+{
+    font-size: 12px;
+  text-align: center;
+  border-bottom: 2px solid black;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+}
+
+
+.calendarOptions:hover {
+  background-color: #f2f2f2;
+  cursor: pointer;
+}
+
+#viewCalendarBtn:first-of-type {
+  margin-top: 20px solid;
+}
+.calendarOptions.active {
+  background-color: #EFB37C; /* your brand color */
+  font-weight: bold;
+  border-left: 4px solid black; /* highlight strip */
+  padding-left: 10px;
+}
+
+.side
+{display:flex;
+justify-content:space-between;
+border:solid 1px;
+padding:10px;}
+/* save button */
+ .orange-sign-up {
+    background-color: #efb37c;
+    color: black;
+    padding: 10px 20px;
+    border: none;
+    cursor: pointer;
+    border-radius:10px;
+  }
+
+/* availability*/
+.availability-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+
+.day-block {
+  border: 1px solid #ccc;
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+  background-color: #fff;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 45px;
+  height: 24px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0;
+  right: 0; bottom: 0;
+  background-color: #ccc;
+  transition: 0.4s;
+  border-radius: 24px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.4s;
+  border-radius: 50%;
+}
+
+.toggle-switch input:checked + .slider {
+  background-color: #efb37c;
+}
+
+.toggle-switch input:checked + .slider:before {
+  transform: translateX(20px);
+}
+
+
+/* time*/
+.day-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+
+.time-row {
+  display: flex;
+  gap: 20px;
+  margin-top: 10px;
+}
+
+.time-row[style*="display: none"] {
+  display: none !important;
+}
+
+.time-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.time-group label {
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.time-group select {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+
+
+.upcoming-hours {
+  margin-top: 30px;
+  padding: 10px;
+  border-top: 1px solid #ccc;
+}
+
+.week-label {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.week-nav {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.nav-arrow {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #333;
+  padding: 4px 10px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.nav-arrow:hover {
+  background-color: #f0f0f0;
+}
+
+
+.day-date {
+  font-size: 12px;
+  color: #777;
+  margin-top: 2px;
+}
+
+#adjust-hours-section {
+  margin-left: 20px;
+  padding: 10px;
+}
+
+.availability-summary-box {
+  margin-top: 20px;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+}
+
+.availability-summary-box h4 {
+  margin-bottom: 10px;
+}
+
+#availability-summary-list {
+  list-style: none;
+  padding: 0;
+}
+
+#availability-summary-list li {
+  padding: 4px 0;
+}
+
+
+.long-save-btn {
+  width: 100%;
+  background-color: #efb37c;
+  color: black;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 20px;
+  cursor: pointer;
+}
+
+.long-save-btn:hover {
+  background-color: #e09d5d;
+}
+
+
+
+/* Calendar */
+/* Outer calendar wrapper */
+.calendar-wrapper {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1rem;
+  box-sizing: border-box;
+  overflow-x: auto;
+}
+   
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #333;
+        }
+.calendar-container {
+  width: 100%;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+        .nav-button {
+            background-color: #efb37c; /* Indigo 500 */
+            color: white;
+            padding: 0.6rem 1rem;
+            border-radius: 0.75rem; /* Rounded button corners */
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            border: none;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .nav-button:hover {
+            background-color: #efb37c; /* Indigo 600 */
+            transform: translateY(-1px);
+        }
+
+        .nav-button:active {
+            background-color: #efb37c; /* Indigo 700 */
+            transform: translateY(0);
+        }
+
+        .weekdays-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 0.5rem;
+            text-align: center;
+            font-weight: 600;
+            color: #6b7280; /* Gray 500 */
+        }
+
+    .days-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(40px, 1fr)); /* flexible columns */
+  gap: 0.5rem;
+  word-wrap: break-word;
+}
+        .day-cell {
+            padding: 0.75rem 0.5rem;
+            border-radius: 0.5rem; /* Slightly rounded day cells */
+            font-weight: 500;
+            color: #374151; /* Gray 700 */
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            aspect-ratio: 1 / 1; /* Make cells square */
+        }
+/* Show dot on narrow screens instead of full times */
+@media (max-width: 480px) {
+  .day-cell {
+    font-size: 0.75rem;
+    padding: 0.5rem;
+  }
+
+  /* Hide full availability and show just the dot */
+  .day-availability-label {
+    display: none;
+  }
+
+  .available-dot {
+    display: block;
+  }
+}
+/* Dot when available */
+.day-dot {
+  width: 8px;
+  height: 8px;
+  background-color: green;
+  border-radius: 50%;
+  margin: 0 auto;
+  margin-top: 5px;
+}
+        .day-cell:hover:not(.empty):not(.current-day) {
+            background-color: #e0e7ff; /* Indigo 100 on hover */
+            transform: translateY(-1px);
+        }
+
+        .day-cell.empty {
+            background-color: transparent;
+            cursor: default;
+            color: #d1d5db; /* Light gray for empty cells */
+        }
+
+        .day-cell.current-day {
+            background-color: #efb37c; /* Indigo 500 */
+            color: white;
+            font-weight: 700;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            transform: scale(1.05);
+        }
+
+        .day-cell.current-day:hover {
+            background-color: #efb37c; /* Darker indigo on hover for current day */
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 640px) {
+            .calendar-container {
+                padding: 1rem;
+                gap: 1rem;
+            }
+            .calendar-header {
+                font-size: 1.25rem;
+            }
+            .nav-button {
+                padding: 0.5rem 0.8rem;
+                font-size: 0.9rem;
+            }
+            .day-cell {
+                padding: 0.5rem 0.3rem;
+                font-size: 0.9rem;
+            }
+          }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          /* Default width when sidebar is visible */
+.calendar-container {
+    flex-grow: 1;
+  width: 75%;
+  margin: 0 auto;
+  transition: width 0.3s ease;
+}
+
+/* Full width when sidebar is hidden */
+.calendar-container.full-width {
+  width: 100%;
+}
+
+.content-area.full-width {
+  width: 100%;
+}
+
+.day-availability-label {
+  font-size: 0.7rem;
+  color: green;
+  margin-top: 4px;
+}
+
+
+
+
+
+#upcoming-availability-list-section {
+  margin: 20px 0;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+}
+
+.availability-entry {
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: #f9f9f9;
+  border-left: 4px solid #5c9;
+  border-radius: 6px;
+}
+
+.availability-entry h4 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.availability-entry p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.day-availability-label {
+  font-size: 0.7em;
+  color: #444;
+  margin-top: 4px;
+}
+
+.has-availability {
+  background-color: #fff7e6;
+  border: 1px solid #ffa94d;
+  font-weight: bold;
+}
+.availability-time {
+  color: #080807; /* dark green */
+  font-weight: 600;
+  text-align: center;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.availability-dot {
+  width: 8px;
+  height: 8px;
+  background-color: orange;
+  border-radius: 50%;
+  margin-top: 4px;
+  margin-left: auto;
+  margin-right: auto;
+}
+/* public/css/availability.css */
+
+.day-cell {
+    /* Your existing day cell styles */
+    display: flex;
+    flex-direction: column; /* To stack day number and hours */
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 5px;
+    min-height: 60px; /* Adjust as needed */
+    position: relative; /* For potential future absolute positioning */
+    border: 1px solid #eee; /* Example */
+}
+
+.day-cell.has-availability {
+    /* Example: subtle border or background change */
+    border: 1px solid #ffaa50;
+    box-shadow: 0 0 5px rgba(255, 140, 0, 0.3);
+}
+
+.day-cell .availability-hours {
+    font-size: 0.75em; /* Smaller font size for hours */
+    color: #333;
+    margin-top: 5px; /* Space between day number and hours */
+    font-weight: bold;
+}
+.availability-hours {
+    display: block; /* Make it take its own line */
+    font-size: 0.8em; /* Smaller font size */
+    color: #ff8c00; /* Orange color, similar to your image */
+    margin-top: 5px; /* A little space from the day number */
+    text-align: center; /* Center the text */
+    white-space: nowrap; /* Prevent wrapping if times are long */
+    overflow: hidden; /* Hide overflow if text is too long */
+    text-overflow: ellipsis; /* Add ellipsis for overflow */
+}
+/* Optional: Style for today's date */
+.day-cell.current-day {
+    background-color: #ffcc99; /* Orange background for today */
+    border-color: #ff9933;
+}
+
+.availability-details-popup {
+    position: fixed; /* Or 'absolute' if within a container */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: white;
+    border: 1px solid #ccc;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    padding: 20px;
+    z-index: 1000; /* Ensure it's on top of other content */
+    border-radius: 8px;
+    text-align: center;
+    min-width: 300px;
+}
+
+.availability-details-popup h3 {
+    margin-top: 0;
+    color: #333;
+}
+
+.availability-details-popup p {
+    color: #555;
+    font-size: 1.1em;
+}
+
+.availability-details-popup button {
+    margin-top: 15px;
+    padding: 8px 15px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.availability-details-popup button:hover {
+    background-color: #0056b3;
+}
+
+.calendar-availability-time {
+  font-size: 12px;
+  margin-top: 4px;
+  color: #444;
+  white-space: nowrap;
+}
+
+
+.bottom-tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 65px;
+  background-color: white;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  border-top: 1px solid #ccc;
+  z-index: 999;
+}
+
+.tab-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-decoration: none;
+  color: black;
+  font-size: 12px;
+}
+
+.tab-item img {
+  width: 24px;
+  height: 24px;
+  display: block;
+  margin: 0 auto 3px;
+}
+
+.tab-item span {
+  display: block;
+  font-weight: 500;
+}
+
+.tab-item svg {
+  width: 35px;
+  height: 35px;
+  margin-bottom: 4px;
+}
+
+.tab-item.active {
+  color: orange; /* or whatever color you want */
+}
+
+.tab-item.active svg {
+  fill: orange; /* optional: makes the icon orange too */
+}

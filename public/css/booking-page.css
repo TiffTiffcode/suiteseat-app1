@@ -1,0 +1,652 @@
+html, body {
+  height: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; /* optional: hides sideways scroll */
+}
+
+body {
+  overflow-y: auto;
+}
+
+main {
+  padding-bottom: 100px; /* adjust to make room for fixed footer */
+}
+
+
+.business-hero {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.header-group-container {
+  display: flex;
+  justify-content: flex-end; /* Ensure items start from the left */
+  padding: 10px 20px;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+
+/* ===== HERO IMAGE ===== */
+
+#hero-image-container {
+  width: 100%;
+  max-height: 100vh;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#hero-image-container img {
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+  display: block;
+}
+
+#hero-image {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  border-radius: 0;
+  display: block;
+}
+.business-hero-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden; /* Optional: hides any overflow, can be changed to 'visible' */
+  padding: 0;
+}
+
+.businessheaderphoto {
+  width: auto;
+  max-height: 100vh; /* Allows the full image to fit within the screen */
+  display: flex;
+  justify-content: center;
+}
+
+.business-hero {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 100vh;
+  object-fit: contain;
+  display: block;
+}
+
+.full-width-wrapper {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+}
+
+
+/* ===== CALENDAR SECTION ===== */
+.calendar-list {
+  border: 2px solid #ddd;
+  border-radius: 12px;
+  padding: 20px;
+  background-color: #fafafa;
+  margin: 20px 0;
+}
+
+.calendar-list h2 {
+  margin-top: 0;
+  font-size: 1.5rem;
+  color: #333;
+  
+}
+
+.h2-center-text {
+  text-align: center;
+}
+.calendar-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+.calendar-button {
+  padding: 12px 16px;
+  border: 1px solid #aaa;
+  border-radius: 8px;
+  background-color: white;
+  cursor: pointer;
+  flex: 1 0 200px;
+  text-align: center;
+}
+
+
+.calendar-list button {
+  display: block;
+  width: 100%;
+  margin: 10px 0;
+  padding: 12px;
+  font-size: 1rem;
+  border: 1px solid #aaa;
+  border-radius: 8px;
+  background-color: white;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.calendar-list button:hover {
+  background-color: #f0f0f0;
+}
+
+.active-calendar {
+  background-color: #aaa;
+  color: #000;
+  font-weight: bold;
+  border-radius: 6px;
+}
+
+/* ===== Categories  ===== */
+.category-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  background-color: #fff;
+}
+.center-title {
+  text-align: center;
+  font-size: 22px;
+  margin-bottom: 20px;
+}
+
+
+.category-name {
+  flex: 1;
+  margin-right: 12px;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.category-select-button {
+  padding: 8px 16px;
+  font-size: 14px;
+  background-color: #111;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.category-select-button:hover {
+  background-color: #444;
+}
+
+/* ===== Service ==== */
+.multi-toggle-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 1rem;
+  margin-bottom: 1rem;
+}
+
+#add-multi-toggle {
+  font-size: 1rem;
+  cursor: pointer;
+  margin: 0;
+}
+
+#clear-selected-services {
+  background-color: #f2f2f2;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  color: #555;
+  border: none;
+}
+
+
+#clear-selected-services:hover {
+  background-color: #ffe6e6;
+  color: red;
+}
+
+.service-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  margin-bottom: 20px;
+}
+.service-item.selected {
+  border: 2px solid #4CAF50;
+  background-color: #f0fff0;
+}
+.service-select-btn.selected-service {
+  background: #d1f4d1;
+  color: #222;
+}
+
+.back-arrow {
+  position: absolute;
+  left: 0;
+  font-size: 20px;
+  cursor: pointer;
+  padding-left: 10px;
+}
+.back-to-services-arrow {
+  
+  padding-left: 10px;
+}
+
+.centered-service-title {
+  margin: 0 auto;
+  font-size: 22px;
+}
+.service-card {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 15px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  transition: all 0.3s ease;
+}
+
+.service-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.name-price-wrapper {
+  display: flex;
+  align-items: flex-start; /* align image and text at top */
+  gap: 12px;
+}
+
+/* Wrap name + price together vertically */
+.name-price-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.service-image {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+
+.service-name {
+  font-weight: bold;
+  font-size: 1.05rem;
+  margin-bottom: 4px;
+}
+
+.service-price {
+  font-weight: 400;
+  font-size: 0.95rem;
+  color: #555;
+}
+.service-select-btn {
+  padding: 6px 12px;
+  background-color: #111;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.description-wrapper {
+  margin-top: 10px;
+}
+
+.service-description {
+  max-height: 40px;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  margin-bottom: 6px;
+}
+
+.service-description.expanded {
+  max-height: 300px;
+}
+
+.toggle-description {
+  background: none;
+  color: #007bff;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+}
+
+.service-select-btn {
+  display: block;
+  margin-left: auto;
+  background: #000;
+  color: #fff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+#services-section {
+  scroll-margin-top: 100px; /* adjust based on your header height */
+}
+
+
+/* ===== Availability Section ===== */
+#custom-calendar-container {
+  max-width: 350px;
+  margin: 0 auto;
+  font-family: sans-serif;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+}
+
+.day-name {
+  font-weight: bold;
+  text-align: center;
+}
+
+.calendar-day {
+  text-align: center;
+  padding: 10px;
+  cursor: pointer;
+  border-radius: 5px;
+  background-color: #f1f1f1;
+}
+
+.calendar-day:hover {
+  background-color: #ddd;
+}
+
+.calendar-day.selected {
+  background-color: #2b8a3e;
+  color: white;
+}
+
+
+.past-date {
+  pointer-events: none;
+  background-color: #999 !important;
+  color: white;
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+
+.svg {
+  position: absolute;
+  left: 0;
+  font-size: 20px;
+  cursor: pointer;
+  padding-left: 20px;
+}
+
+.calendar {
+  max-width: 400px;
+  font-family: sans-serif;
+  margin: 0 auto;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: bold;
+  margin: 10px 0;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+  text-align: center;
+}
+
+.day-name, .date-cell {
+  padding: 10px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.day-name {
+  font-weight: bold;
+}
+
+.date-cell {
+  color: #aaa;
+}
+
+.date-cell.available {
+  background-color: black;
+  color: white;
+  border-radius: 50%;
+  text-align: center;
+  cursor: pointer;
+  padding: 10px;
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+  margin: auto;
+}
+.date-cell.today {
+  border: 2px solid black;
+}
+
+.date-cell.selected {
+  outline: 2px solid black;
+}
+
+
+
+/* ===== confirmation Popup ===== */
+.service-list {
+  list-style: none;
+  padding-left: 0;
+  margin-top: 0.5rem;
+}
+
+.service-item {
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  background: #f8f8f8;
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+
+.service-name {
+  font-weight: bold;
+  font-size: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.service-details {
+  font-size: 0.9rem;
+  color: #555;
+}
+
+
+
+/* ===== Footer ===== */
+footer {
+  text-align: center;
+  padding: 20px;
+  font-size: 0.9rem;
+  color: #777;
+}
+.businessSection {
+  padding: 40px 20px;
+}
+
+
+.time-slots {
+  display: flex;
+  flex-wrap: wrap;         /* ⬅️ allows multiple rows */
+  gap: 10px;
+  overflow-x: auto;
+  padding: 10px 0;
+  max-height: 80px;        /* limit height to 2 rows approx */
+}
+
+.time-slot {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  background-color: transparent;  /* ❌ remove grey background */
+  border: 1px solid #ccc;         /* ✅ keep border */
+  border-radius: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.time-slot:hover {
+  background-color: #f5f5f5; /* optional hover effect */
+}
+.time-group h3 {
+  border-top: 1px solid #ddd;
+  padding-top: 20px;
+  margin-top: 20px;
+  font-size: 18px;
+  color: #333;
+}
+
+/* Optional: Remove top line for the first one (Morning) */
+.time-group h3:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+.time-group {
+  border: 2px solid #ccc;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 20px;
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* optional for soft shadow */
+}
+
+.time-slots::-webkit-scrollbar {
+  height: 6px;
+}
+
+.time-slots::-webkit-scrollbar-thumb {
+  background: #aaa;
+  border-radius: 4px;
+}
+
+#floating-summary {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: white;
+  border: 2px solid #ccc;
+  border-radius: 12px;
+  padding: 12px 16px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: move; /* hint it's draggable */
+}
+
+.summary-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#hide-summary-btn {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.bring-back-summary {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 10px 14px;
+  background-color: #000;
+  color: white;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  z-index: 998;
+}
+
+
+
+#popup-add-calendar {
+  position: fixed;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  padding: 20px;
+  border-radius: 10px;
+  z-index: 1001;
+}
+
+#popup-overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  z-index: 1000;
+}
+
+.popup-open {
+  overflow: hidden;
+}
+
+#popup-login {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 20px;
+  border: 2px solid red;
+  background: white;
+   z-index: 9999; /* Try raising this */
+}
+
+
+
+

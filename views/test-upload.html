@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test Upload</title></head>
+<body>
+<h2>Add a Hat</h2>
+<form id="hat-form">
+  <input type="text" id="hat-name-input" placeholder="Hat name"><br><br>
+  <input type="file" id="hat-file-input" accept="image/*"><br><br>
+  <button type="submit">Upload Hat</button>
+</form>
+
+<h3>Saved Hats</h3>
+<div id="hat-list"></div>
+
+<h2>Create New Business Service</h2>
+<form id="business-service-form" enctype="multipart/form-data">
+  <label>Name:</label><br>
+  <input type="text" id="service-name"><br><br>
+
+  <label>Upload Image:</label><br>
+  <input type="file" id="service-image"><br><br>
+
+  <button type="submit">Submit</button>
+</form>
+
+<hr>
+
+<h2>Uploaded Business Services</h2>
+<div id="business-service-list"></div>
+
+
+
+
+
+
+  <script>
+
+document.getElementById("business-service-form").addEventListener("submit", async function (e) {
+  e.preventDefault();
+
+  const name = document.getElementById("service-name").value.trim();
+  const imageFile = document.getElementById("service-image").files[0];
+
+  const values = {
+    Name: name // ✅ exactly matches your field name
+  };
+
+  const form = new FormData();
+  form.append("dataType", "Business Service"); // ✅ exact match
+  form.append("values", JSON.stringify(values));
+
+  if (imageFile) {
+    form.append("file", imageFile);
+    form.append("fieldName", "serviceImage"); // ✅ must match your file field
+  }
+
+  try {
+    const res = await fetch("/create-record-with-image", {
+      method: "POST",
+      body: form
+    });
+
+    const result = await res.json();
+
+    if (res.ok) {
+      alert("✅ Business Service saved!");
+      loadBusinessServices();
+    } else {
+      alert("❌ Error saving");
+      console.log(result);
+    }
+  } catch (err) {
+    console.error("Failed to upload:", err);
+    alert("❌ Upload failed.");
+  }
+});
+
+
+
+
+async function loadBusinessServices() {
+  try {
+    const res = await fetch("/get-records/Business Service");
+    const data = await res.json();
+
+    const list = document.getElementById("business-service-list");
+    list.innerHTML = "";
+
+    data.forEach(item => {
+      if (item.values?.Name) {
+        const div = document.createElement("div");
+        div.innerHTML = `
+          <strong>${item.values.Name}</strong><br>
+          ${item.values.serviceImage ? `<img src="${item.values.serviceImage}" style="max-width:100px;">` : "No image"}
+          <hr>
+        `;
+        list.appendChild(div);
+      }
+    });
+  } catch (err) {
+    console.error("Failed to load services:", err);
+  }
+}
+
+// ✅ Load on page start
+loadBusinessServices();
+
+
+
+
+
+
+
+
+
+
+document.getElementById("hat-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const name = document.getElementById("hat-name-input").value.trim();
+  const file = document.getElementById("hat-file-input").files[0];
+
+  if (!name || !file) return alert("Please enter hat name and choose an image.");
+
+  const values = { name };
+
+  const form = new FormData();
+  form.append("dataType", "Hats"); // ⬅️ This must match exactly your Datatype name
+  form.append("values", JSON.stringify(values));
+  form.append("file", file);
+  form.append("fieldName", "hatImage"); // ⬅️ This must match the *key* (not label) of the image field
+
+  try {
+    const res = await fetch("/create-record-with-image", {
+      method: "POST",
+      body: form,
+    });
+    const result = await res.json();
+
+    if (res.ok) {
+      alert("✅ Hat saved!");
+      loadHats();
+    } else {
+      alert("❌ Hat failed to save.");
+      console.log(result);
+    }
+  } catch (err) {
+    console.error("Upload failed:", err);
+    alert("Server error.");
+  }
+});
+
+async function loadHats() {
+  try {
+    const res = await fetch("/get-records/Hats");
+    const hats = await res.json();
+
+    const container = document.getElementById("hat-list");
+    container.innerHTML = "";
+
+    hats.forEach(hat => {
+      const div = document.createElement("div");
+      div.style.marginBottom = "10px";
+
+      const img = document.createElement("img");
+      img.src = hat.values?.hatImage;
+      img.style.maxWidth = "100px";
+      img.style.display = "block";
+
+      const name = document.createElement("p");
+      name.textContent = hat.values?.name;
+
+      div.appendChild(img);
+      div.appendChild(name);
+      container.appendChild(div);
+    });
+  } catch (err) {
+    console.error("Failed to load hats:", err);
+  }
+}
+
+loadHats();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+document.getElementById("upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const name = document.getElementById("name-input").value.trim();
+  const file = document.getElementById("file-input").files[0];
+
+  if (!name || !file) return alert("Please enter a name and select an image.");
+
+  const values = { name }; // 🔑 This is the custom field you’re saving
+
+  const form = new FormData();
+  form.append("dataType", "Flyer"); // ⬅️ You can rename this to whatever datatype you want
+  form.append("values", JSON.stringify(values));
+  form.append("file", file);
+  form.append("fieldName", "image"); // ⬅️ This is the key that will store the image path
+
+  try {
+    const res = await fetch("/create-record-with-image", {
+      method: "POST",
+      body: form,
+    });
+    const result = await res.json();
+
+    if (res.ok) {
+      alert("✅ Saved!");
+      loadItems(); // 🔄 refresh list
+    } else {
+      alert("❌ Failed to save.");
+      console.error(result);
+    }
+  } catch (err) {
+    console.error("Save error:", err);
+    alert("❌ Server error.");
+  }
+});
+
+// Load and show all items
+async function loadItems() {
+  const res = await fetch("/get-records/Flyer"); // ⬅️ Use same datatype as above
+  const items = await res.json();
+
+  const list = document.getElementById("item-list");
+  list.innerHTML = "";
+
+  items.forEach(item => {
+    const div = document.createElement("div");
+    div.style.marginBottom = "10px";
+
+    const img = document.createElement("img");
+    img.src = item.values?.image;
+    img.style.maxWidth = "100px";
+    img.style.display = "block";
+
+    const text = document.createElement("p");
+    text.textContent = item.values?.name;
+
+    div.appendChild(img);
+    div.appendChild(text);
+    list.appendChild(div);
+  });
+}
+
+loadItems(); // 🟢 Run once on page load
+
+
+
+
+
+
+
+
+
+    document.getElementById("uploadForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const file = document.getElementById("test-file").files[0];
+      if (!file) return alert("Please select a file");
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/test-upload", {
+        method: "POST",
+        body: formData
+      });
+
+      const result = await res.json();
+      document.getElementById("result").innerText = JSON.stringify(result, null, 2);
+    });
+  </script>
+</body>
+</html>

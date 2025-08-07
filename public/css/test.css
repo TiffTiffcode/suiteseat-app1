@@ -1,0 +1,303 @@
+/* public/css/test.css */
+
+
+/* Header Styling */
+.header {
+    background: linear-gradient(90deg, #EFB37C 0%, #C5F2DA 100%);
+    padding: 20px;
+    text-align: left;
+    font-size: 24px;
+    color: black;
+    box-shadow: 0px 4px 11.2px 0px rgba(0, 0, 0, 0.25);
+  }
+  
+  .business-header {
+  margin-bottom: 20px;
+}
+
+.business-header svg {
+  transform: translateY(5px) translateX(5px);
+}
+
+
+  /* popup */
+
+.popup-add-business {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 30px;
+  border-radius: 12px;
+  z-index: 1001;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  width: 90%;
+  max-width: 400px;
+  max-height: 80vh; /* NEW */
+  overflow-y: auto;  /* NEW */
+}
+
+
+#popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: none;
+}
+
+.popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f0f0f0;
+  border-bottom: 1px solid #ccc;
+}
+
+.popup-title {
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+
+
+.popup-add-business .form-group {
+  margin-bottom: 15px;
+}
+
+.popup-add-business label {
+  font-weight: bold;
+  display: block;
+  margin-bottom: 5px;
+}
+
+.popup-add-business input,
+.popup-add-business select {
+  width: 100%;
+  padding: 8px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+}
+
+.button-center-wrapper {
+  text-align: center;
+}
+
+.orange-sign-up {
+  background-color: #efb37c;
+  color: black;
+  padding: 10px 20px;
+  border: none;
+  cursor: pointer;
+  border-radius: 10px;
+}
+/* Prevent body from scrolling when popup is open */
+body.popup-open {
+  overflow: hidden;
+}
+
+
+body {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+  background-color: #f5f5f5;
+}
+
+h1 {
+  text-align: center;
+}
+
+label {
+  display: block;
+  margin-top: 15px;
+  font-weight: bold;
+}
+
+select,
+input,
+button {
+  padding: 8px;
+  margin-top: 5px;
+  width: 100%;
+  max-width: 400px;
+  display: block;
+}
+
+button {
+  background-color: #EFB37C;
+  color: white;
+  border: none;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+button:hover {
+  background-color: #EFB37C;
+}
+
+.popup {
+  position: fixed;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  padding: 20px;
+  z-index: 1001;
+  border: 1px solid #ccc;
+  box-shadow: 0 0 15px rgba(0,0,0,0.3);
+  max-width: 400px;
+  width: 90%;
+}
+
+.popup h2 {
+  margin-top: 0;
+}
+
+#overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+}
+
+
+/* Calendar Grids  */
+ .time-slots-container {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr); /* 7 days */
+  flex: 1;
+  position: relative;
+  border-left: 1px solid #ccc;
+}
+
+.time-column {
+  position: relative;
+  border-right: 1px solid #ddd;
+}
+
+.time-slot {
+  height: 15px;
+  border-bottom: 1px solid #eee;
+}
+.time-slot:hover {
+  background-color: #f0f0f0;
+}
+
+.calendar-grid {
+  display: flex;
+  height: 1440px; /* Adjust height if needed */
+  margin-top: 10px;
+}
+
+.hour-column {
+  width: 60px;
+  font-size: 12px;
+  text-align: right;
+  padding-right: 8px;
+  border-right: 1px solid #ccc;
+  display: flex;
+  flex-direction: column;
+  height: 1440px; /* 💡 force match height of calendar */
+}
+
+
+.week-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr); /* 7 even columns */
+  text-align: center;
+  background: #f9f9f9;
+  font-weight: bold;
+  padding: 10px 0;
+  border-bottom: 1px solid #ccc;
+}
+
+.day-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 14px;
+}
+
+.day-date {
+  font-size: 12px;
+  color: #777;
+  margin-top: 4px;
+}
+.day-column {
+  border-right: 1px solid #eee;
+}
+
+
+                                 /* Date Header */
+.date-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  border-bottom: 1px solid #ddd;
+  background-color: #f9f9f9;
+}
+
+.date-header .left-section,
+.date-header .right-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.date-header .middle-section {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column; /* ⬅️ Stack vertically */
+  align-items: center;
+  text-align: center;
+  gap: 2px; /* optional space between the month and label */
+}
+
+#month-year {
+  font-size: 20px;
+  font-weight: bold;
+  margin: 0;
+}
+
+.date-header h6 {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+}
+#month-year {
+  font-size: 20px;
+  font-weight: bold;
+  color: black;
+  margin: 0;
+}
+
+
+.appointment-block {
+  position: absolute;
+  background-color: #ffe6cc;
+  border: 1px solid #EFB37C;
+  font-size: 12px;
+  padding: 2px;
+  overflow: hidden;
+  left: 5px;
+  right: 5px;
+  z-index: 2;
+}

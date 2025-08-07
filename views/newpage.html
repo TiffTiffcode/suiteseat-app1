@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Page</title>
+  <link rel="stylesheet" href="/css/newpage.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <section class="header-group-container">
+      <div class="group left-group" id="user-greeting">Suite Seat</div>
+      <div class="group right-group"> 
+        <button id="open-login-popup-btn">Login</button>
+        </div>
+    </section>
+  </header>
+
+
+<div id="public-url-container" style="display: none; gap: 10px; align-items: center; margin-top: 10px;">
+  <strong>Your Booking Page:</strong>
+  <span id="public-url" style="color: blue;"></span>
+  <button id="view-public-page-button">View</button>
+</div>
+
+  
+                                    <!--Menu-section-->
+  <section class="menu-section">
+    <div class="menu-left">
+      <h3>Menu</h3>
+    </div>
+  </section>
+
+  <section class="options-bar">
+    <h3>Clients</h3>
+    <h3>Availability</h3>
+  </section>
+
+  <section class="business-holder">
+    <h3>Choose business to manage</h3>
+    <br>
+    <label for="business-dropdown">Select a Business</label>
+<select id="business-dropdown">
+  <option value="">-- Select Business --</option>
+</select>
+
+<h2 id="selected-business-name">Parent group's business name</h2>
+<div id="public-url-container" class="public-url-box" style="margin: 10px 0; display: none;">
+  <strong>Your Booking Page:</strong>
+  <span id="public-url"></span>
+  <button id="view-public-page-button">View</button>
+</div>
+
+  </section>
+
+  <section class="option-bar row-orange">
+    <div class="option active" data-id="business">Business</div>
+    <div class="option" data-id="calendar">Calendar</div>
+    <div class="option" data-id="category">Category</div>
+    <div class="option" data-id="service">Service</div>
+    <div class="option" data-id="booking">Booking Page</div>
+  </section>
+
+  <!-- Sections -->
+    
+<!-- Business -->
+  <div id="business-section" class="tab-section">
+    <div class="business-section-header">
+      <div class="spacer"></div>
+      <h2 class="section-title">Business</h2>
+      <button id="open-business-popup-button" class="add-business-button">Add Business</button>
+    </div>
+    <section class="border-start">
+      <div class="border">Name</div>
+      <div class="border"># of Services</div>
+      <div class="border"># of Clients</div>
+    </section>
+    
+    <section class="border-border">
+  <div class="business-option-bar">
+    <div class="business-column" id="business-name-column"></div>
+    <div class="business-column" id="services-column"></div>
+    <div class="client-column" id="clients-column"></div>
+
+  </div>
+</section>
+ </div>
+
+<!-- Calendar -->
+   <div id="calendar-section" class="tab-section" style="display: none;">
+    <div class="calendars-section-header">
+      <div class="spacer"></div>
+      <h2 class="section-title">Calendars</h2>
+     <button id="open-calendar-popup-button" class="add-business-button">Add Calendar</button>
+     <section class="border-start">
+      <div class="border">Name</div>
+    </section>
+      </div>
+      
+    <section class="border-border">
+      <div class="calendar-option-bar">
+        <div class="calendar-column" id="calendar-name-column"></div>
+        <div class="calendar-column" id="calendars-column"></div>
+      </div>
+    </section>
+  </div>
+
+   <!-- Category -->
+  <div id="category-section" class="tab-section" style="display: none;">
+    <div class="category-section-header">
+      <div class="spacer"></div>
+      <h2 class="section-title">Category</h2>
+      <button id="open-category-popup-button" class="add-business-button">Add Category</button>
+    </div>
+    <section class="border-start">
+      <div class="border">Name</div>
+    </section>
+    <section class="border-border">
+      <div class="category-option-bar">
+        <div class="category-column" id="category-name-column">Name </div>
+        <div class="category-column" id="category-column">Calendar </div>
+      </div>
+    </section>
+  </div>
+
+   <!-- Service -->
+  <div id="service-section" class="tab-section" style="display: none;">
+    <div class="service-section-header">
+      <div class="spacer"></div>
+      <h2 class="section-title">Service</h2>
+      <button id="open-service-popup-button" class="add-business-button">Add Service</button>
+    </div>
+    <section class="border-start">
+      <div class="border">Name</div>
+      <div class="border">Price</div>
+    </section>
+    <section class="border-border">
+      <div class="service-option-bar">
+        <div class="service-column" id="service-name-column"></div>
+        <div class="service-column" id="service-price-column"></div>
+      </div>
+    </section>
+  </div>
+
+   <!-- Booking -->
+  <div id="booking-section" class="tab-section" style="display: none;">
+    <div class="booking-section-header">
+      <div class="spacer"></div>
+      <h2 class="section-title">Booking Page</h2>
+    </div>
+    <section class="border-start">
+      <div class="border">Coming Soon</div>
+    </section>
+  </div>
+
+ 
+
+
+
+
+
+
+
+                                        <!--  Popups -->
+
+
+<!-- Business Popup -->
+  <section id="popup-add-business" class="popup-add-business" style="display: none;">
+      <div class="business-section-header">
+        <div class="spacer"></div>
+        <h2 id="popup-title" class="section-title">Business</h2>
+        <button type="button" onclick="closeAddBusinessPopup()" style="float:right; border:none; background:none; font-size:18px;">&times;</button>
+
+</div>
+
+      <form id="popup-add-business-form">
+        <div class="form-group">
+          <label for="popup-business-name-input">Business Name*</label><br>
+          <input id="popup-business-name-input" name="businessName" type="text" placeholder="Enter business name" required>
+        </div>
+
+        <div class="form-group">
+          <label for="popup-your-name-input">Your Name*</label><br>
+          <input id="popup-your-name-input" name="yourName" type="text" placeholder="Enter your name" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="popup-business-phone-number-input">Phone Number*</label><br>
+          <input id="popup-business-phone-number-input" name="phoneNumber" type="text" placeholder="Enter phone number">
+        </div>
+
+        <div class="form-group">
+          <label for="popup-business-location-name-input">Location Name</label><br>
+          <input id="popup-business-location-name-input" name="locationName" type="text" placeholder="Enter location name" required>
+        </div>
+
+        <div class="form-group">
+          <label for="popup-business-address-input">Business Address</label><br>
+          <input id="popup-business-address-input" name="businessAddress" type="text" placeholder="Enter business address" required>
+        </div>
+
+        <div class="form-group">
+          <label for="popup-business-email-input">Business Email</label><br>
+          <input id="popup-business-email-input" name="businessEmail" type="text" placeholder="Enter business email">
+        </div>
+
+        <div class="form-group">
+          <label for="image-upload">Upload Image:</label><br>
+          <input type="file" id="image-upload" name="image" accept="image/*">
+        </div>
+        <div class="button-center-wrapper">
+          <button type="submit" id="save-button" class="add-business-button">Save Business</button>
+          <button type="button" id="update-button" class="add-business-button" style="display: none;">Update</button>
+          <button type="button" id="delete-button" class="add-business-button" style="display: none; background-color: #e74c3c;">Delete</button>
+        </div>
+        
+      </form>
+      </section>
+
+      <!-- Calendar Popup -->
+ 
+  <section id="popup-add-calendar" class="popup-add-business" style="display: none;">
+    <div class="business-section-header">
+      <div class="spacer"></div>
+      <h2 class="section-title">Add Calendar</h2>
+      <button type="button" onclick="closeAddCalendarPopup()" style="float:right; border:none; background:none; font-size:18px;">&times;</button>
+    </div>
+
+      <div class="form-group">
+        <label for="dropdown-calendar-business">Choose Business</label><br>
+        <select id="dropdown-calendar-business">
+          <option value="">-- Select --</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="popup-calendar-name-input">Calendar Name*</label><br>
+        <input id="popup-calendar-name-input" type="text" placeholder="Enter calendar name" required>
+      </div>
+
+      <div class="button-center-wrapper">
+        <button id="save-calendar-button" class="add-business-button">Save Calendar</button>
+       <button id="update-calendar-button" class="add-business-button" style="display: none;">Update</button>
+  <button id="delete-calendar-button" class="add-business-button" style="display: none; background-color: #e74c3c;">Delete</button>
+</div>
+      
+  </section>
+  <!-- ✅ Add this to avoid null error -->
+  <div id="popup-overlay" class="popup-overlay" style="display: none;"></div>
+
+  
+
+  <!-- Login Popup -->
+<section id="popup-login" class="popup-add-business" style="display: none;">
+  <div class="business-section-header">
+    <div class="spacer"></div>
+    <h2 class="section-title">Login</h2>
+    <button type="button" onclick="closeLoginPopup()" style="float:right; border:none; background:none; font-size:18px;">&times;</button>
+
+  </div>
+
+  <form id="login-form">
+    <div class="form-group">
+      <label for="login-email">Email</label><br>
+      <input type="email" id="login-email" required placeholder="Enter your email" />
+    </div>
+
+    <div class="form-group">
+      <label for="login-password">Password</label><br>
+      <input type="password" id="login-password" required placeholder="Enter your password" />
+    </div>
+
+    <div class="button-center-wrapper">
+      <button type="submit" class="add-business-button">Log In</button>
+    </div>
+  </form>
+</section>
+    
+
+
+<script src="/js/newpage.js" defer></script>
+</body>
+</html>

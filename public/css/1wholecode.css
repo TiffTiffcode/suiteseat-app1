@@ -1,0 +1,38 @@
+body {
+  font-family: Arial, sans-serif;
+  padding: 30px;
+}
+
+
+.container {
+  max-width: 500px;
+  margin: auto;
+  background: white;
+  padding: 30px;
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+select {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 20px;
+}
+
+#hero-image {
+  width: 100%;
+  max-height: 300px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 3px solid #ccc;
+}
+
+h2 {
+  margin-bottom: 10px;
+}
+
+#hero-preview img {
+  border: 2px solid #ccc;
+  border-radius: 6px;
+  max-height: 300px;
+}

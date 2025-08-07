@@ -1,0 +1,43 @@
+body {
+  font-family: 'Arial', sans-serif;
+  text-align: center;
+  background: #fff0f6;
+  padding: 20px;
+}
+
+h1 {
+  color: #d63384;
+}
+
+#client-request {
+  font-size: 1.5em;
+  margin: 20px 0;
+}
+
+.tools {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin: 20px;
+}
+
+.tool {
+  padding: 15px 30px;
+  font-size: 18px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  background: #fff;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  transition: all 0.2s ease;
+}
+
+.tool:hover {
+  background: #ffe0f0;
+}
+
+#result {
+  font-size: 1.2em;
+  margin-top: 20px;
+  font-weight: bold;
+}
