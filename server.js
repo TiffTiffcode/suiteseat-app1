@@ -69,7 +69,6 @@ app.use(session({
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "views")));
 app.use("/templates", express.static(path.join(__dirname, "templates")));
 app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
 
@@ -2678,9 +2677,10 @@ app.get("/newpage", (req, res) => {
 });
 
 //Index Page 
-app.get('/',(req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'index.html'));
-  }); 
+// ✅ root route — use index.html in project root
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
   
 //Datatype page 
 app.get('/datatype',(req, res) => {
