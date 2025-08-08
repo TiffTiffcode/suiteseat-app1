@@ -18,6 +18,7 @@ const Client = require("./models/Client");
 const Appointment = require("./models/Appointment");
 const WeeklyAvailability = require("./models/WeeklyAvailability");
 const UpcomingHours = require("./models/UpcomingHours");
+console.log("✅ Stripe key length:", process.env.STRIPE_SECRET_KEY?.length || "NOT FOUND");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 
