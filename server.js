@@ -53,7 +53,7 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 //Admin
 app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin.html')); // your admin page
+  res.sendFile(path.join(__dirname, 'public', 'admin.html')); 
 });
 
   //Signup page 
