@@ -1,0 +1,2541 @@
+let currentWeekDates = [];
+let currentEditAppointmentId = null;
+let lastEditedBusinessId = null;
+// Global error hooks (so other errors don't silently stop later code)
+window.onerror = function (msg, src, line, col, err) {
+  console.error("[window.onerror]", { msg, src, line, col, err });
+};
+window.addEventListener("unhandledrejection", (event) => {
+  console.error("[unhandledrejection]", event.reason || event);
+});
+
+// globals used across pages
+(function () {
+  if (!window.API) window.API = (t) => `/api/records/${encodeURIComponent(t)}`;
+  if (!window.TYPE_UPCOMING) window.TYPE_UPCOMING = 'Upcoming Hours';
+})();
+
+
+// Login Popup
+function openLoginPopup() {
+  document.getElementById("popup-login").style.display = "block";
+  document.getElementById("popup-overlay").style.display = "block";
+  document.body.classList.add("popup-open");
+}
+
+function closeLoginPopup() {
+  document.getElementById("popup-login").style.display = "none";
+  document.getElementById("popup-overlay").style.display = "none";
+  document.body.classList.remove("popup-open");
+}
+
+window.closeLoginPopup = closeLoginPopup;
+
+const loginBtn = document.getElementById("open-login-popup-btn"); // ✅ Keep this ONE
+if (loginBtn) {
+  loginBtn.addEventListener("click", () => openLoginPopup());
+}
+
+// Handle login form submission
+const loginForm = document.getElementById("login-form");
+if (loginForm) {
+  loginForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    
+    const email = document.getElementById("login-email").value.trim();
+    const password = document.getElementById("login-password").value.trim();
+
+    if (!email || !password) {
+      alert("Please enter both email and password.");
+      return;
+    }
+
+    try {
+      const res = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const result = await res.json();
+
+      if (res.ok) {
+        alert("✅ Logged in!");
+        closeLoginPopup();
+        window.location.reload();
+      } else {
+        alert(result.message || "Login failed.");
+      }
+    } catch (err) {
+      console.error("Login error:", err);
+      alert("Something went wrong during login.");
+    }
+  });
+}
+
+
+// Show user name after login
+// Show user name after login — with DEBUG LOGS
+document.addEventListener("DOMContentLoaded", async () => {
+  const headerRight = document.querySelector(".right-group");
+  if (!headerRight) return;
+
+  try {
+    const res = await fetch("/check-login", { credentials: "include", cache: "no-store" });
+    const data = await res.json();
+    console.log("[DEBUG] /check-login response:", data);
+
+    if (!data || !data.loggedIn) return;
+
+    // Show what we’re choosing for display
+    const chosen =
+      (data.firstName || "").trim() ||
+      (data.name || "").trim() ||
+      // comment this next line if you DON'T want to ever use email prefix
+      (data.email ? data.email.split("@")[0] : "") ||
+      "there";
+
+    console.log("[DEBUG] chosen display name:", chosen);
+
+    headerRight.innerHTML = `
+      Hi, ${chosen} 👋 
+      <button id="logout-btn">Logout</button>
+    `;
+
+    document.getElementById("logout-btn")?.addEventListener("click", async () => {
+      const r = await fetch("/logout", { credentials: "include" });
+      if (r.ok) {
+        alert("👋 Logged out!");
+        window.location.href = "/signup.html";
+      }
+    });
+  } catch (err) {
+    console.error("[DEBUG] /check-login fetch failed:", err);
+  }
+});
+
+
+
+  ////////////////////Menu Section/////////////////////
+ //show busineesses in dropdown 
+  document.addEventListener("DOMContentLoaded", () => {
+  loadUserBusinesses(); // Call it on page load
+
+    const dropdown = document.getElementById("business-dropdown");
+const addApptBtn = document.getElementById("open-appointment-popup-btn");
+
+if (dropdown && addApptBtn) {
+  dropdown.addEventListener("change", () => {
+    if (dropdown.value === "all") {
+      addApptBtn.disabled = true;
+      addApptBtn.title = "Select a specific business to add appointments";
+    } else {
+      addApptBtn.disabled = false;
+      addApptBtn.title = "";
+    }
+  });
+
+  // ✅ Optional: default to disabled if "all" is default
+  if (dropdown.value === "all" || !dropdown.value) {
+    addApptBtn.disabled = true;
+    addApptBtn.title = "Select a specific business to add appointments";
+  }
+}
+
+});
+
+//change the name in the menu section 
+// Safely update the label next to the business select (if it exists)
+// and reload the calendar appointments.
+function updateBusinessHeadingAndReload() {
+  const dd = document.getElementById('business-dropdown');
+  if (!dd) return;
+
+  const heading = document.getElementById('selected-business-name'); // may be null
+  const val   = dd.value;
+  const label = dd.options[dd.selectedIndex]?.textContent?.trim() || '';
+
+  if (heading) {
+    if (!val || val === 'all') {
+      heading.textContent = '📅 All Appointments';
+    } else {
+      heading.textContent = label || 'Choose business to manage';
+    }
+  }
+
+  // This keeps your calendar in sync; does not affect popup logic.
+  loadAppointments();
+}
+
+// Change event → update + reload
+document.getElementById('business-dropdown')?.addEventListener('change', updateBusinessHeadingAndReload);
+
+// Initial paint on page load so the label/calendar match the current selection
+document.addEventListener('DOMContentLoaded', updateBusinessHeadingAndReload);
+
+// DONE Function to fetch and display user's businesses
+async function loadUserBusinesses() {
+  const dropdown = document.getElementById("business-dropdown");
+  if (!dropdown) return;
+
+  // Default option
+  dropdown.innerHTML = `<option value="all">📅 All Appointments</option>`;
+
+  try {
+    // Optional: sort newest first; tweak if you prefer alpha by name
+    const sort = encodeURIComponent(JSON.stringify({ createdAt: -1 }));
+    const res = await fetch(`${API('Business')}?limit=500&sort=${sort}&ts=${Date.now()}`, {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+
+    if (res.status === 401) {
+      console.warn('Not logged in');
+      return; // or show a login prompt
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const rows = await res.json();
+
+    // Helper: tolerate different field labels
+    const getName = (v) =>
+      v?.['Business Name'] ??
+      v?.['Name'] ??
+      v?.businessName ??
+      v?.name ??
+      '(Untitled)';
+
+    // Filter out soft-deleted, map, and sort by name
+    const items = (rows || [])
+      .filter(r => !r.deletedAt)
+      .map(r => ({ id: r._id, name: getName(r.values || {}) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Populate dropdown
+    for (const { id, name } of items) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = name;
+      dropdown.appendChild(opt);
+    }
+
+    // (Optional) restore last selection
+    const saved = sessionStorage.getItem('appointmentsBusinessId') || 'all';
+    if (dropdown.querySelector(`option[value="${saved}"]`)) {
+      dropdown.value = saved;
+    }
+
+    // (Optional) remember selection
+    if (!dropdown.dataset.bound) {
+      dropdown.addEventListener('change', () => {
+        sessionStorage.setItem('appointmentsBusinessId', dropdown.value || 'all');
+      });
+      dropdown.dataset.bound = '1';
+    }
+
+  } catch (err) {
+    console.error("❌ Failed to load businesses:", err);
+    alert("Could not load your businesses.");
+  }
+}
+
+
+//////////////////////Calendar/////////////////////////////////
+// ---------------- Load Appointments Function ----------------
+//DONE
+function parseHHMM(time24) {
+  // expects "HH:MM" (24h). If not, try Date to parse.
+  if (/^\d{2}:\d{2}$/.test(time24)) {
+    const [h, m] = time24.split(":").map(n => parseInt(n, 10));
+    return { h, m };
+  }
+  const d = new Date(`1970-01-01 ${time24}`);
+  return { h: d.getHours(), m: d.getMinutes() };
+}
+
+function addMinutes(h, m, delta) {
+  let total = h * 60 + m + (delta || 0);
+  total = ((total % (24*60)) + (24*60)) % (24*60); // keep in day
+  return { h: Math.floor(total / 60), m: total % 60 };
+}
+
+function format12h(h, m) {
+  const ampm = h >= 12 ? "PM" : "AM";
+  const hh = ((h + 11) % 12) + 1; // 0 -> 12, 13 -> 1, etc
+  const mm = String(m).padStart(2, "0");
+  return `${hh}:${mm} ${ampm}`;
+}
+
+// once, near your helpers
+let __slotHeightPx = null;
+function getSlotHeightPx() {
+  if (__slotHeightPx != null) return __slotHeightPx;
+  const a = getTopOffsetFromTime("08:15");
+  const b = getTopOffsetFromTime("08:00");
+  __slotHeightPx = Math.abs(a - b) || 24; // fallback if measure fails
+  return __slotHeightPx;
+}
+
+function renderAppointmentsOnGrid(appts, maps = {}) {
+  const container =
+    document.getElementById("appointments-grid") ||
+    document.getElementById("calendar-grid") ||
+    document.getElementById("appointments-list");
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  const serviceMap = maps.serviceMap || window.__serviceMap || {};
+
+  appts.forEach(appt => {
+    const card = document.createElement("div");
+    card.className = "appt-card";
+    card.dataset.id = appt._id;
+
+    card.innerHTML = buildApptCardContent(appt, serviceMap);
+
+    // ✅ height = exact number of 15-minute slots
+    const minutes  = Number(appt.duration) || 0;        // <-- use appt.duration
+    const blocks   = Math.max(1, Math.ceil(minutes / 15)); // 15→1, 30→2, 45→3, 60→4
+    const slotPx   = getSlotHeightPx();
+    const heightPx = blocks * slotPx - 1; // -1 so it doesn’t touch next slot border
+
+    card.style.height    = `${heightPx}px`;
+    card.style.boxSizing = "border-box";
+    card.style.overflow  = "hidden";
+    card.style.margin    = "0";
+    card.style.padding   = "4px 6px";
+
+    container.appendChild(card);
+  });
+}
+
+
+
+function buildApptCardContent(appt, serviceMap) {
+  // times
+  const { h, m } = parseHHMM(appt.time || "00:00");
+  const dur = Number(appt.duration) || 0;
+  const end = addMinutes(h, m, dur);
+  const startLabel = format12h(h, m);
+  const endLabel   = format12h(end.h, end.m);
+
+  // client
+  const clientLabel = (appt.clientName || "").trim() || "(No client)";
+
+  // services list
+const serviceNames = (appt.serviceIds || [])
+  .map(id => lookupName(serviceMap, id))
+  .filter(Boolean);
+
+
+
+  const servicesHtml = serviceNames.length
+    ? `<ul class="appt-services">${serviceNames.map(n => `<li>${n}</li>`).join("")}</ul>`
+    : `<ul class="appt-services"><li>(No service)</li></ul>`;
+
+  return `
+    <div class="appt-time">${startLabel} – ${endLabel}</div>
+    <div class="appt-client">${clientLabel}</div>
+    ${servicesHtml}
+  `;
+}
+
+
+
+// tiny helper to read values by multiple possible labels
+function getV(v, ...keys) {
+  for (const k of keys) {
+    if (v?.[k] !== undefined && v[k] !== null) return v[k];
+  }
+  return undefined;
+}
+
+// optional: if your page has a current month view, set these somewhere:
+//   window.apptYear = 2025
+//   window.apptMonth = 7   // 0=Jan
+function ymd(d) {
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function lookupName(map, id) {
+  if (!map) return undefined;
+  const key = String(id);
+  if (map instanceof Map) return map.get(key) ?? map.get(id);
+  if (typeof map === "object") return map[key] ?? map[id];
+  return undefined;
+}
+
+// Small helpers you can place near the top of your file once
+function getId(ref) {
+  if (!ref) return "";
+  if (typeof ref === "string") return ref;
+  if (typeof ref === "object") return String(ref._id || ref.id || "");
+  return "";
+}
+function normalizeRefArray(val) {
+  if (!val) return [];
+  const arr = Array.isArray(val) ? val : [val];
+  return arr.map(getId).filter(Boolean);
+}
+function recordMatchesBusiness(rec, bizId) {
+  if (!bizId || bizId === "all") return true;
+  const b = rec?.values?.["Business"];
+  if (!b) return false;
+  if (typeof b === "string") return b === bizId;
+  if (typeof b === "object" && b._id) return String(b._id) === String(bizId);
+  return false;
+}
+async function fetchAppointments(whereObj, limit = 1000, sortObj = { "Date": 1, "Time": 1, "createdAt": 1 }) {
+  const qs = new URLSearchParams({
+    where: JSON.stringify(whereObj || {}),
+    limit: String(limit),
+    sort : JSON.stringify(sortObj),
+    ts   : Date.now().toString()
+  });
+  const res = await fetch(`/api/records/Appointment?${qs.toString()}`, {
+    credentials: 'include',
+    cache: 'no-store'
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// ---- Load & render appointments (robust to ref shapes)
+async function loadAppointments() {
+  try {
+    const businessId = document.getElementById("business-dropdown")?.value || "all";
+
+    // Build base date filter (server understands $gte/$lte on YYYY-MM-DD strings)
+    const whereBase = {};
+    if (Number.isInteger(window.apptYear) && Number.isInteger(window.apptMonth)) {
+      const start = new Date(window.apptYear, window.apptMonth, 1);
+      const end   = new Date(window.apptYear, window.apptMonth + 1, 0);
+      const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      whereBase["Date"] = { "$gte": ymd(start), "$lte": ymd(end) };
+    }
+
+    let rows = [];
+
+    if (businessId !== "all") {
+      // 1) Try Business as plain id
+      rows = await fetchAppointments({ ...whereBase, "Business": businessId });
+
+      // 2) If none, try Business as {_id: ...}
+      if (!Array.isArray(rows) || rows.length === 0) {
+        rows = await fetchAppointments({ ...whereBase, "Business": { _id: businessId } });
+      }
+
+      // 3) If still none, fetch by date only & filter by Business client-side
+      if (!Array.isArray(rows) || rows.length === 0) {
+        rows = await fetchAppointments(whereBase);
+        rows = rows.filter(r => recordMatchesBusiness(r, businessId));
+      } else {
+        // defensively filter anyway
+        rows = rows.filter(r => recordMatchesBusiness(r, businessId));
+      }
+    } else {
+      // "all" businesses → just date filter (or everything)
+      rows = await fetchAppointments(whereBase);
+    }
+
+    // Build lookup maps (for all businesses when "all" is selected)
+    const includeAll = (businessId === 'all');
+    const [clientMap, serviceMap] = await Promise.all([
+      buildClientMap(businessId, includeAll),
+      buildServiceMap(businessId, includeAll),
+    ]);
+
+    // Normalize rows -> appt objects your grid expects
+    const appts = (rows || []).map(r => {
+      const v = r.values || {};
+
+      const clientId   = getId(v["Client"]);
+    const rawServices =
+  v["Service(s)"] ??
+  v["Services"] ??
+  v["Service"] ??
+  v["Selected Services"] ??
+  v["Service Ids"] ??
+  v["Service Id"] ??
+  v["serviceIds"] ??
+  v["serviceId"];
+
+const serviceIds = normalizeRefArray(rawServices);
+
+      const clientName = clientMap[String(clientId)] || "";
+    // don't compute serviceNames here; builder will render them
+
+
+     return {
+  _id: r._id,
+  date:     v["Date"] || v["date"] || "",
+  time:     v["Time"] || v["time"] || "",
+  duration: v["Duration"] ?? v["duration"] ?? 0,
+  clientId,
+  serviceIds,
+  clientName,
+  businessId: getId(v["Business"]) || v["businessId"] || "",
+  calendarId: getId(v["Calendar"]) || v["calendarId"] || "",
+  note:       v["Note"] || ""
+};
+
+    });
+
+ // after you await Promise.all([buildClientMap, buildServiceMap]) and build `appts`:
+window.__serviceMap = serviceMap; // optional global fallback
+window.__clientMap  = clientMap;
+
+renderAppointmentsOnGrid(appts, { serviceMap, clientMap });
+
+  } catch (err) {
+    console.error("❌ Failed to load appointments:", err);
+  }
+}
+
+
+
+
+//Buid Calendar ////////
+ // render months  
+function updateMonthYear() {
+  const monthYearDisplay = document.getElementById("month-year");
+  if (!monthYearDisplay) return;
+
+  const options = { month: 'long', year: 'numeric' };
+  const formattedDate = currentWeekStart.toLocaleDateString(undefined, options);
+  monthYearDisplay.textContent = formattedDate;
+}
+
+
+ //  Add the functions to build the grid 
+function generateHourColumn() {
+  const hourColumn = document.querySelector(".hour-column");
+  if (!hourColumn) return;
+
+  hourColumn.innerHTML = ""; // Clear old content
+
+  for (let i = 0; i < 24; i++) {
+    const label = document.createElement("div");
+    label.classList.add("hour-label");
+    label.textContent = i === 0 ? "12 AM" :
+                        i < 12 ? `${i} AM` :
+                        i === 12 ? "12 PM" :
+                        `${i - 12} PM`;
+    label.style.height = "60px"; // 4 x 15 min
+    hourColumn.appendChild(label);
+  }
+}
+ //  Add the functions to build the grid 
+function generateTimeGrid() {
+  const container = document.querySelector(".time-slots-container");
+  if (!container) return;
+
+  container.innerHTML = ""; // Clear previous
+
+  for (let d = 0; d < 7; d++) {
+    const column = document.createElement("div");
+    column.classList.add("time-column");
+
+    for (let t = 0; t < 96; t++) {
+      const slot = document.createElement("div");
+      slot.classList.add("time-slot");
+
+      // Optional: add a border for horizontal lines
+      slot.style.borderBottom = "1px solid #eee";
+      slot.style.height = "15px";
+      
+      column.appendChild(slot);
+    }
+
+    // Optional: vertical line between day columns
+    column.style.borderRight = "1px solid #ddd";
+
+    container.appendChild(column);
+  }
+}
+
+ //  let arrows change week in calendar
+document.getElementById("prev-week").addEventListener("click", () => {
+  currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+  updateWeekDates(currentWeekStart);
+  loadAppointments(); // ✅
+  updateWeekOffsetLabel(); 
+});
+
+document.getElementById("next-week").addEventListener("click", () => {
+  currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+  updateWeekDates(currentWeekStart);  // ✅ FIXED
+   loadAppointments();
+    updateWeekOffsetLabel();
+});
+
+document.getElementById("today-btn").addEventListener("click", () => {
+  currentWeekStart = new Date();
+  updateWeekDates(currentWeekStart);  // ✅ FIXED
+   loadAppointments();
+    updateWeekOffsetLabel();
+});
+
+let currentWeekStart = new Date(); // Tracks which week you're on
+
+function updateWeekDates(startDate) {
+  currentWeekDates = [];
+
+  const baseDate = new Date(startDate);
+  const dayOfWeek = baseDate.getDay(); // 0 (Sun) - 6 (Sat)
+  baseDate.setDate(baseDate.getDate() - dayOfWeek); // Back up to Sunday
+  baseDate.setHours(0, 0, 0, 0); // Normalize time
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(baseDate);
+    d.setDate(baseDate.getDate() + i);
+    d.setHours(0, 0, 0, 0); // Normalize time again
+
+    currentWeekDates.push(d);
+
+    const dayCell = document.querySelector(`.day-date[data-day="${i}"]`);
+    if (dayCell) {
+      dayCell.textContent = d.getDate();
+    }
+  }
+
+  // 🧠 Update the label after updating week
+  updateMonthYear();
+}
+//add 1 week or weeks out under months 
+function updateWeekOffsetLabel() {
+  const label = document.getElementById("week-offset-label");
+
+  const today = new Date();
+  const startOfThisWeek = getStartOfWeek(today);
+  const startOfViewedWeek = getStartOfWeek(currentWeekDates[0]);
+
+  const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+  const weekDiff = Math.round((startOfViewedWeek - startOfThisWeek) / msPerWeek);
+
+  if (weekDiff === 0) {
+    label.textContent = ""; // current week, no label
+  } else if (weekDiff > 0) {
+    label.textContent = `${weekDiff} Week${weekDiff > 1 ? "s" : ""} Out`;
+  } else {
+    const absDiff = Math.abs(weekDiff);
+    label.textContent = `${absDiff} Week${absDiff > 1 ? "s" : ""} Ago`;
+  }
+}
+
+// Helper: Get the start of the week (Sunday)
+function getStartOfWeek(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0 = Sunday
+  d.setDate(d.getDate() - day);
+  return d;
+}
+
+//
+function buildHourLabels() {
+  const hourCol = document.querySelector(".hour-column");
+  if (!hourCol) return;
+
+  hourCol.innerHTML = ""; // Clear old labels
+
+  for (let hour = 0; hour < 24; hour++) {
+    const label = document.createElement("div");
+    label.className = "hour-label";
+    label.textContent = formatHourLabel(hour); // e.g., 12 AM, 1 AM, etc.
+    hourCol.appendChild(label);
+  }
+}
+
+function formatHourLabel(hour) {
+  const period = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${displayHour} ${period}`;
+}
+
+function buildTimeGrid() {
+  const container = document.querySelector(".time-slots-container");
+  if (!container) return;
+
+  container.innerHTML = ""; // Clear old grid
+
+  for (let day = 0; day < 7; day++) {
+    const column = document.createElement("div");
+    column.className = "time-column";
+
+for (let i = 0; i < 96; i++) {
+  const slot = document.createElement("div");
+  slot.className = "time-slot";
+
+  if (i % 4 === 0) {
+    slot.classList.add("hour-start");
+  } else if (i % 4 === 1) {
+    slot.classList.add("slot-15");
+  } else if (i % 4 === 2) {
+    slot.classList.add("slot-30");
+  } else if (i % 4 === 3) {
+    slot.classList.add("slot-45");
+  }
+
+  column.appendChild(slot);
+}
+
+
+
+
+    container.appendChild(column);
+  }
+}
+
+  /////////////////////Render Appointments as Cards on the Grid//////////
+function renderAppointmentsOnGrid(appointments, maps = {}) {
+  const grid = document.querySelector(".time-slots-container");
+  if (!grid) return;
+
+  // remove previous cards
+  document.querySelectorAll(".appointment-card").forEach(el => el.remove());
+
+  const currentWeekDatesStr = currentWeekDates.map(d =>
+    new Date(d).toISOString().split("T")[0]
+  );
+
+  const serviceMap = maps.serviceMap || window.__serviceMap || {};
+
+  appointments.forEach(appt => {
+    const { _id, date, time, clientName, duration, businessId, clientId } = appt;
+    const serviceIds = Array.isArray(appt.serviceIds) ? appt.serviceIds : (appt.serviceIds ? [appt.serviceIds] : []);
+    if (!date || !time) return;
+    if (!currentWeekDatesStr.includes(date)) return;
+
+    const dayIndex  = getDayIndexFromDate(date);
+    const topOffset = getTopOffsetFromTime(time);
+
+    // compute end time
+    const { h, m } = parseHHMM(time);
+    const endHM = addMinutes(h, m, Number(duration) || 0);
+    const startLabel = format12h(h, m);
+    const endLabel   = format12h(endHM.h, endHM.m);
+
+    // service names from map
+    const services = serviceIds.map(id => lookupName(serviceMap, id)).filter(Boolean);
+    const servicesHtml = services.length
+      ? `<ul class="appt-services">${services.map(s => `<li>${s}</li>`).join("")}</ul>`
+      : `<ul class="appt-services"><li>(No service)</li></ul>`;
+
+    const card = document.createElement("div");
+    card.className = "appointment-card";
+    card.style.position = "absolute";
+    card.style.top  = `${Math.round(topOffset)}px`;
+    card.style.left = `calc(${dayIndex} * 14.28%)`;
+
+    card.innerHTML = `
+      <div class="appt-time"><strong>${startLabel} – ${endLabel}</strong></div>
+      <div class="appt-client">${(clientName || "").trim() || "(No client)"}</div>
+      ${servicesHtml}
+    `;
+
+    card.addEventListener("click", () => {
+      openAppointmentPopup({
+        _id,
+        time,
+        date,
+        duration,
+        businessId,
+        clientId,
+        serviceId: serviceIds[0] || null
+      });
+    });
+
+    grid.appendChild(card);
+  });
+}
+
+
+
+
+                                   // Popup
+                                    // Add Client                                   
+async function openClientPopup() {
+  await populateClientBusinessDropdown();
+  document.getElementById("popup-create-client").style.display = "block";
+  document.getElementById("popup-overlay").style.display = "block";
+  document.body.classList.add("popup-open");
+}
+
+
+function closeClientPopup() {
+  document.getElementById("popup-create-client").style.display = "none";
+  document.getElementById("popup-overlay").style.display = "none";
+  document.body.classList.remove("popup-open");
+}
+
+// DONE Show businesses in dropdown 
+async function populateClientBusinessDropdown() {
+  const dropdown = document.getElementById("client-business");
+  if (!dropdown) return;
+
+  // Show a placeholder while loading
+  dropdown.innerHTML = `<option value="">-- Choose Business --</option>`;
+  dropdown.disabled = true;
+
+  // If you want to mirror the selection from the main business filter
+  const selectedOutside = document.getElementById("business-dropdown")?.value || "";
+
+  // helper to read a value by several possible labels
+  const getV = (v, ...keys) => {
+    for (const k of keys) {
+      if (v?.[k] !== undefined && v[k] !== null) return v[k];
+    }
+    return undefined;
+  };
+
+  try {
+    const params = new URLSearchParams({
+      // sort by name-ish labels if you like
+      sort: JSON.stringify({ "Business Name": 1, "Name": 1, createdAt: 1 }),
+      limit: "500",
+      ts: Date.now().toString()
+    });
+
+    const res = await fetch(`/api/records/Business?${params.toString()}`, {
+      credentials: "include",
+      cache: "no-store"
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const rows = await res.json();
+
+    // Clear and repopulate
+    dropdown.innerHTML = `<option value="">-- Choose Business --</option>`;
+
+    (rows || [])
+      // hide soft-deleted
+      .filter(r => {
+        const v = r.values || {};
+        const isDeleted = !!getV(v, "is Deleted", "isDeleted");
+        return !isDeleted && !r.deletedAt;
+      })
+      // derive display label
+      .map(r => ({
+        id: r._id,
+        label:
+          getV(r.values, "Business Name", "businessName", "Name", "name") ||
+          "(Untitled)"
+      }))
+      // sort client-side as a fallback
+      .sort((a, b) => a.label.localeCompare(b.label))
+      // build <option>s
+      .forEach(biz => {
+        const opt = document.createElement("option");
+        opt.value = biz.id;
+        opt.textContent = biz.label;
+
+        // preselect to match the outside dropdown if it’s set
+        if (selectedOutside && selectedOutside === biz.id) {
+          opt.selected = true;
+        }
+        dropdown.appendChild(opt);
+      });
+
+  } catch (err) {
+    console.error("❌ Failed to load businesses:", err);
+    // keep the placeholder; optionally show a toast/alert
+  } finally {
+    dropdown.disabled = false;
+  }
+}
+
+// === Prefill duration/calendar from selected service ===
+(function () {
+  function applyServiceSelectionDefaults() {
+    const svcSel   = document.getElementById("appointment-service");
+    const durInput = document.getElementById("appointment-duration"); // <input type="number">
+    const calSel   = document.getElementById("appointment-calendar"); // optional
+
+    if (!svcSel || !durInput) return;
+
+    const opt = svcSel.selectedOptions?.[0];
+    if (!opt || !opt.value) return; // ignore placeholder like "-- Select Service --"
+
+    // Duration
+    const mins = parseInt(opt.dataset.duration || "", 10);
+    if (Number.isFinite(mins) && mins > 0) {
+      const step = parseInt(durInput.step || "15", 10);
+      const min  = parseInt(durInput.min  || "15", 10);
+      const snapped = Math.max(min, Math.round(mins / step) * step);
+      durInput.value = String(snapped);
+    }
+
+    // Calendar (optional)
+    if (calSel && opt.dataset.calendarId) {
+      const id = opt.dataset.calendarId;
+      if ([...calSel.options].some(o => o.value === id)) calSel.value = id;
+    }
+  }
+
+  // expose so you can call it after populating services
+  window.applyServiceSelectionDefaults = applyServiceSelectionDefaults;
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const svcSel = document.getElementById("appointment-service");
+    if (!svcSel) return;
+    svcSel.addEventListener("change", applyServiceSelectionDefaults);
+  });
+})();
+
+//  Save Client
+// Save Client (uses /api/records/Client)
+// Save Client (uses /api/records/Client)
+const createClientForm = document.getElementById("create-client-form");
+if (createClientForm) {
+  createClientForm.addEventListener("submit", async function (e) {
+    e.preventDefault();
+
+    const businessId = document.getElementById("client-business").value || "";
+    const firstName  = (document.getElementById("client-name").value || "").trim();
+    const lastName   = (document.getElementById("client-last-name").value || "").trim();
+    const phone      = (document.getElementById("client-phone").value || "").trim();
+    const email      = (document.getElementById("client-email").value || "").trim();
+
+    if (!businessId || !firstName) {
+      alert("Please enter First Name and choose a Business.");
+      return;
+    }
+
+    const API_URL =
+      (window.API || ((t) => `/api/records/${encodeURIComponent(t)}`))("Client");
+
+    // --- helper to safely fetch JSON with logs ---
+    async function safeFetchJSON(url, opts) {
+      const res = await fetch(url, opts);
+      const txt = await res.text();
+      try {
+        const json = txt ? JSON.parse(txt) : null;
+        if (!res.ok) {
+          console.error("[Create Client] HTTP", res.status, url, json || txt);
+          throw new Error(`HTTP ${res.status}`);
+        }
+        return json;
+      } catch (e) {
+        console.error("[Create Client] Bad JSON from", url, txt);
+        throw e;
+      }
+    }
+
+    // --- helper: does record belong to this business? ---
+    function recordMatchesBusiness(rec, bizId) {
+      const v = rec?.values || {};
+      const b = v["Business"];
+      if (!b) return false;
+      // Business might be a string id OR an object {_id: "..."}
+      if (typeof b === "string") return b === bizId;
+      if (typeof b === "object" && b._id) return String(b._id) === String(bizId);
+      return false;
+    }
+
+    try {
+      // ---------- (1) Optional: existence check ----------
+      // Because reference fields can be stored as objects, we query by a unique field
+      // (Email, Phone) and then filter by Business in JS.
+      let exists = false;
+
+      if (email) {
+        const url = `${API_URL}?where=${encodeURIComponent(JSON.stringify({ "Email": email }))}&limit=5&ts=${Date.now()}`;
+        const list = await safeFetchJSON(url, { credentials: "include", cache: "no-store" });
+        exists = Array.isArray(list) && list.some(r => recordMatchesBusiness(r, businessId));
+      } else if (phone) {
+        const url = `${API_URL}?where=${encodeURIComponent(JSON.stringify({ "Phone Number": phone }))}&limit=5&ts=${Date.now()}`;
+        const list = await safeFetchJSON(url, { credentials: "include", cache: "no-store" });
+        exists = Array.isArray(list) && list.some(r => recordMatchesBusiness(r, businessId));
+      } else {
+        // fallback: same first/last name within the business
+        const url = `${API_URL}?where=${encodeURIComponent(JSON.stringify({ "First Name": firstName }))}&limit=10&ts=${Date.now()}`;
+        const list = await safeFetchJSON(url, { credentials: "include", cache: "no-store" });
+        exists = Array.isArray(list) && list.some(r => {
+          if (!recordMatchesBusiness(r, businessId)) return false;
+          const v = r.values || {};
+          const ln = (v["Last Name"] || "").trim().toLowerCase();
+          return !lastName || ln === lastName.trim().toLowerCase();
+        });
+      }
+
+      if (exists) {
+        alert("ℹ️ This client is already in your list.");
+        return;
+      }
+
+      // ---------- (2) Create the Client ----------
+      const values = {
+        "Business":     { _id: businessId },   // Reference as object (safer with your server)
+        "First Name":   firstName,
+        "Last Name":    lastName,
+        "Phone Number": phone,
+        "Email":        email,
+        "is Deleted":   false
+      };
+
+      console.log("[Create Client] creating with values:", values);
+
+      const createRes = await fetch(API_URL, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ values })
+      });
+
+      const result = await createRes.json().catch(() => null);
+
+      if (createRes.ok) {
+        alert("✅ Client added successfully!");
+        createClientForm.reset();
+        if (typeof loadAllClients === "function") loadAllClients();
+        if (typeof closeClientPopup === "function") closeClientPopup();
+      } else {
+        console.error("[Create Client] create failed:", result);
+        alert((result && (result.message || result.error)) || "❌ Failed to add client.");
+      }
+
+    } catch (err) {
+      console.error("❌ Error saving client:", err);
+      alert("Something went wrong.");
+    }
+  });
+}
+
+
+//DONE// ---------- one-time constants ----------
+// ---------- one-time constants ----------
+window.TYPE_SERVICE ??= 'Service'; // <- change to 'Services' if that's your exact DataType name
+
+// ---------- one-time: bind business -> load services/clients ----------
+(function bindApptBusinessChangeOnce() {
+  const sel = document.getElementById("appointment-business");
+  if (!sel || sel.dataset.bound) return;
+
+  sel.addEventListener("change", async (e) => {
+    const businessId = e.target.value;
+    await loadAppointmentServices(businessId);
+    if (typeof loadAppointmentClients === 'function') {
+      await loadAppointmentClients(businessId);
+    }
+  });
+
+  sel.dataset.bound = "1";
+})();
+
+// ---------- helpers (top-level, reusable) ----------
+async function loadAppointmentBusinesses() {
+  const dropdown = document.getElementById("appointment-business");
+  if (!dropdown) return;
+
+  dropdown.innerHTML = `<option value="">-- Select Business --</option>`;
+
+  try {
+    const res = await fetch(`/api/records/Business?limit=500&ts=${Date.now()}`, {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const rows = await res.json();
+    rows
+      .filter(r => !r.deletedAt)
+      .sort((a, b) =>
+        (a?.values?.businessName || '').localeCompare(b?.values?.businessName || '')
+      )
+      .forEach(biz => {
+        const opt = document.createElement('option');
+        opt.value = biz._id;
+        opt.textContent = biz?.values?.businessName || '(Untitled Business)';
+        dropdown.appendChild(opt);
+      });
+  } catch (err) {
+    console.error("Error loading businesses:", err);
+    dropdown.innerHTML = `<option value="">⚠️ Failed to load</option>`;
+  }
+}
+
+// Robust value getter
+function vget(v, ...keys) {
+  for (const k of keys) {
+    if (v && v[k] != null && v[k] !== '') return v[k];
+  }
+  return undefined;
+}
+
+// Fill the <select> with options
+function fillServiceSelect(dropdown, rows) {
+  dropdown.innerHTML = `<option value="">-- Select Service --</option>`;
+  let count = 0;
+
+  rows.forEach(row => {
+    const v   = row.values || {};
+    const name =
+      vget(v, 'Service Name', 'Name', 'serviceName') || '(Unnamed Service)';
+    const duration = vget(v, 'duration', 'Duration');
+    const calendar = vget(v, 'Calendar', 'calendarId');
+
+    const opt = document.createElement('option');
+    opt.value = row._id;
+    opt.textContent = name;
+    if (duration) opt.dataset.duration = duration;
+    if (calendar) opt.dataset.calendarId = calendar;
+    dropdown.appendChild(opt);
+    count++;
+  });
+
+  if (!count) {
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.disabled = true;
+    empty.textContent = '— No services for this business —';
+    dropdown.appendChild(empty);
+  }
+}
+
+// Try both "Service" and "Services". Fetch all and filter client-side by Business.
+async function loadAppointmentServices(businessId) {
+  const dropdown = document.getElementById('appointment-service');
+  if (!dropdown) return;
+
+  dropdown.innerHTML = `<option value="">-- Select Service --</option>`;
+  if (!businessId || businessId === 'all') return [];
+
+  const url = `/api/records/Service?limit=1000&ts=${Date.now()}`;
+  try {
+    const res = await fetch(url, { credentials:'include', cache:'no-store' });
+    if (!res.ok) return;
+    const all = await res.json();
+
+    const rows = (all || []).filter(r => {
+      const v = r.values || {};
+      const b = v['Business'] ?? v['businessId'] ?? v['Business Id'] ?? v['Biz'] ?? v['biz'];
+      const id = (b && typeof b === 'object') ? (b._id || b.id) : b;
+      return String(id || '') === String(businessId);
+    });
+
+    rows.forEach(row => {
+      const v = row.values || {};
+     const name = v['Service Name'] || v['Name'] || v.serviceName || '(Unnamed Service)';
+const opt  = document.createElement('option');
+opt.value  = row._id;
+opt.textContent = name;
+
+// 👇 grab duration from whatever your schema uses
+const durationRaw =
+  v['Duration'] ??
+  v['duration'] ??
+  v['durationMinutes'] ??
+  v['Service Duration'] ??
+  v['Extra Time']; // only if you stored service time that way
+
+const durationNum = Number(durationRaw);
+if (Number.isFinite(durationNum) && durationNum > 0) {
+  opt.dataset.duration = String(durationNum);
+} else {
+  console.warn('[service] missing duration:', { id: row._id, name, values: v });
+}
+
+const calVal = v['Calendar'] ?? v['calendarId'];
+const calId  = (calVal && typeof calVal === 'object') ? (calVal._id || calVal.id) : calVal;
+if (calId) opt.dataset.calendarId = String(calId);
+
+dropdown.appendChild(opt);
+
+    });
+  } catch {/* ignore */}
+}
+
+
+
+// ---------- popup ----------
+// ---------- popup ----------
+async function openAppointmentPopup() {
+  const popup   = document.getElementById("popup-create-appointment");
+  const overlay = document.getElementById("popup-overlay");
+  const form    = document.getElementById("create-appointment-form");
+  const svcSel  = document.getElementById("appointment-service");
+  const cliSel  = document.getElementById("appointment-client");
+  const apptBizSel = document.getElementById("appointment-business");
+  const mainBizSel = document.getElementById("business-dropdown");
+
+  // 1) Decide which business to use inside the popup:
+  //    Prefer main filter (if not "all"), else keep last popup choice, else last used from sessionStorage.
+  const intendedBizId =
+    (mainBizSel?.value && mainBizSel.value !== "all")
+      ? mainBizSel.value
+      : (apptBizSel?.value || sessionStorage.getItem("lastAppointmentBusinessId") || "");
+
+  // 2) Reset the form (clears everything)
+  form?.reset();
+
+  // 3) Clear selects to clean placeholders (no preselected service/client)
+  if (svcSel) svcSel.innerHTML = `<option value="">-- Select Service --</option>`;
+  if (cliSel) cliSel.innerHTML = `<option value="">-- Select Client --</option>`;
+
+  // 4) Populate the popup's Business dropdown
+  await loadAppointmentBusinesses();
+
+  // 5) Bind business change ONCE (so we don't double-bind on repeated opens)
+  if (apptBizSel && !apptBizSel.dataset.bound) {
+    apptBizSel.addEventListener("change", async (e) => {
+      const bizId = e.target.value || "";
+      sessionStorage.setItem("lastAppointmentBusinessId", bizId);
+
+      // reset service/client lists
+      if (svcSel) svcSel.innerHTML = `<option value="">-- Select Service --</option>`;
+      if (cliSel) cliSel.innerHTML = `<option value="">-- Select Client --</option>`;
+
+      if (bizId) {
+        await Promise.all([
+          loadAppointmentServices(bizId),
+          loadAppointmentClients(bizId),
+        ]);
+      } else {
+        if (svcSel) svcSel.innerHTML = `<option value="">-- Select Business First --</option>`;
+        if (cliSel) cliSel.innerHTML = `<option value="">-- Select Business First --</option>`;
+      }
+    });
+    apptBizSel.dataset.bound = "1";
+  }
+
+  // 6) Apply the intended business to the popup (does NOT touch the main dropdown)
+  if (apptBizSel && intendedBizId) {
+    apptBizSel.value = intendedBizId;
+
+    // load services/clients for that business, but DO NOT auto-select a service
+    await Promise.all([
+      loadAppointmentServices(intendedBizId),
+      loadAppointmentClients(intendedBizId),
+    ]);
+  } else {
+    // show placeholders if no business chosen
+    if (svcSel) svcSel.innerHTML = `<option value="">-- Select Business First --</option>`;
+    if (cliSel) cliSel.innerHTML = `<option value="">-- Select Business First --</option>`;
+  }
+
+  // 7) Make sure duration and service remain blank on open
+  const durInput = document.getElementById("appointment-duration");
+  if (durInput) durInput.value = "";
+  if (svcSel) svcSel.selectedIndex = 0;
+
+  // 8) Show popup
+  if (popup)   popup.style.display = "block";
+  if (overlay) overlay.style.display = "block";
+  document.body.classList.add("popup-open");
+}
+
+function closeAppointmentPopup() {
+  const popup   = document.getElementById("popup-create-appointment");
+  const overlay = document.getElementById("popup-overlay");
+  if (popup)   popup.style.display = "none";
+  if (overlay) overlay.style.display = "none";
+  document.body.classList.remove("popup-open");
+}
+
+
+//DONE // ── Businesses for the "Create Appointment" form ─────────────────────────────
+async function loadAppointmentBusinesses() {
+  const dropdown = document.getElementById("appointment-business");
+  if (!dropdown) return;
+
+  dropdown.innerHTML = `<option value="">-- Select Business --</option>`;
+  dropdown.disabled = true;
+
+  // tiny helper to read the first existing key
+  const getV = (v, ...keys) => {
+    for (const k of keys) if (v && v[k] != null) return v[k];
+    return undefined;
+  };
+
+  try {
+    const params = new URLSearchParams({
+      sort: JSON.stringify({ "Business Name": 1, "Name": 1, createdAt: 1 }),
+      limit: "500",
+      ts: Date.now().toString()
+    });
+
+    const res = await fetch(`/api/records/Business?${params}`, {
+      credentials: "include",
+      cache: "no-store"
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const rows = await res.json();
+
+    // Filter soft-deleted; choose a label robustly; sort alpha
+    const options = (rows || [])
+      .filter(r => {
+        const v = r.values || {};
+        const isDeleted = !!getV(v, "is Deleted", "isDeleted");
+        return !isDeleted && !r.deletedAt;
+      })
+      .map(r => ({
+        id: r._id,
+        label:
+          getV(r.values, "Business Name", "businessName", "Name", "name") ||
+          "(Untitled)"
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    // Populate dropdown
+    for (const b of options) {
+      const opt = document.createElement("option");
+      opt.value = b.id;
+      opt.textContent = b.label;
+      dropdown.appendChild(opt);
+    }
+  } catch (err) {
+    console.error("Error loading businesses:", err);
+  } finally {
+    dropdown.disabled = false;
+  }
+}
+
+// Change handlers (guarded)
+document.getElementById("appointment-business")?.addEventListener("change", async function () {
+  const businessId = this.value || "";
+  const showAll = document.getElementById("show-all-clients")?.checked;
+
+  try {
+    if (showAll) {
+      // implement to load every client you own
+      await (typeof loadAllClientsForAppointments === "function" && loadAllClientsForAppointments());
+    } else if (businessId) {
+      // implement to load clients scoped to a business
+      await (typeof loadAppointmentClients === "function" && loadAppointmentClients(businessId));
+    } else {
+      // optional: clear clients UI if no business selected
+      if (typeof clearAppointmentClients === "function") clearAppointmentClients();
+    }
+
+    // services tied to business
+    if (typeof loadAppointmentServices === "function") {
+      await loadAppointmentServices(businessId);
+    }
+  } catch (e) {
+    console.error(e);
+  }
+});
+
+document.getElementById("show-all-clients")?.addEventListener("change", async function () {
+  const businessId = document.getElementById("appointment-business")?.value || "";
+  try {
+    if (this.checked) {
+      await (typeof loadAllClientsForAppointments === "function" && loadAllClientsForAppointments());
+    } else if (businessId) {
+      await (typeof loadAppointmentClients === "function" && loadAppointmentClients(businessId));
+    }
+  } catch (e) {
+    console.error(e);
+  }
+});
+
+//Done
+async function loadAllClientsForAppointments() {
+  const dropdown = document.getElementById("appointment-client");
+  if (!dropdown) return;
+
+  dropdown.innerHTML = `<option value="">-- Select Client --</option>`;
+  dropdown.disabled = true;
+
+  // tiny helper to read the first existing key
+  const getV = (v, ...keys) => {
+    for (const k of keys) if (v && v[k] != null) return v[k];
+    return undefined;
+  };
+
+  try {
+    const params = new URLSearchParams({
+      sort: JSON.stringify({ "First Name": 1, "Last Name": 1, createdAt: 1 }),
+      limit: "1000",
+      ts: Date.now().toString()
+    });
+
+    const res = await fetch(`/api/records/Client?${params}`, {
+      credentials: "include",
+      cache: "no-store"
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const rows = await res.json();
+
+    const clients = (rows || [])
+      // hide soft-deleted
+      .filter(r => {
+        const v = r.values || {};
+        const isDeleted = !!getV(v, "is Deleted", "isDeleted");
+        return !isDeleted && !r.deletedAt;
+      })
+      // build label robustly
+      .map(r => {
+        const v = r.values || {};
+        const first = getV(v, "First Name", "firstName", "Name", "name") || "";
+        const last  = getV(v, "Last Name", "lastName") || "";
+        const email = getV(v, "Email", "email") || "";
+        const label = (first || last) ? `${first} ${last}`.trim() : (email || "(No name)");
+        return { id: r._id, label };
+      })
+      // sort A–Z
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    // populate
+    for (const c of clients) {
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = c.label;
+      dropdown.appendChild(opt);
+    }
+  } catch (err) {
+    console.error("❌ Failed to load all clients for appointments:", err);
+  } finally {
+    dropdown.disabled = false;
+  }
+}
+
+
+// Render Services
+// -------- helpers (keep near top of file) --------
+function vget(v, ...keys) {
+  for (const k of keys) if (v && v[k] != null && v[k] !== '') return v[k];
+  return undefined;
+}
+
+// -------- Services loader (SINGLE SOURCE OF TRUTH) --------
+async function loadAppointmentServices(businessId) {
+  const dropdown = document.getElementById('appointment-service');
+  if (!dropdown) return [];
+
+  // reset once
+  dropdown.innerHTML = `<option value="">-- Select Service --</option>`;
+
+  if (!businessId || businessId === 'all') {
+    console.warn('[Services] no business selected');
+    return [];
+  }
+
+  const getId = (b) => (b && typeof b === 'object') ? (b._id || b.id) : b;
+
+  let rows = [];
+  try {
+    const url = `/api/records/Service?limit=1000&ts=${Date.now()}`;
+    const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const all = await res.json();
+
+    // Filter by Business robustly
+    rows = (all || []).filter(row => {
+      const v = row.values || {};
+      const biz = v['Business'] ?? v['businessId'] ?? v['Business Id'] ?? v['Biz'] ?? v['biz'];
+      return String(getId(biz) || '') === String(businessId);
+    });
+  } catch (e) {
+    console.warn('[Services] fetch error:', e);
+    rows = [];
+  }
+
+  // Build options with duration/calendar data
+  for (const row of rows) {
+    const v = row.values || {};
+    const name =
+      v['Service Name'] || v['Name'] || v.serviceName || '(Unnamed Service)';
+
+    const durationRaw =
+      v['Duration'] ??
+      v['duration'] ??
+      v['Duration (minutes)'] ??
+      v['Service Duration'] ??
+      v['durationMinutes'];
+
+    const opt = document.createElement('option');
+    opt.value = row._id;
+    opt.textContent = name;
+
+    const durationNum = Number(durationRaw);
+    if (Number.isFinite(durationNum) && durationNum > 0) {
+      opt.dataset.duration = String(durationNum);
+    } else {
+      // optional: helpful once while wiring up
+      // console.warn('[service] missing duration:', { id: row._id, name, values: v });
+    }
+
+    const calVal = v['Calendar'] ?? v['calendarId'];
+    const calId  = getId(calVal);
+    if (calId) opt.dataset.calendarId = String(calId);
+
+    dropdown.appendChild(opt);
+  }
+
+  // Auto-select first real service & prefill duration/calendar
+
+
+
+  return rows;
+}
+
+// Ensure the global points to this version:
+window.loadAppointmentServices = loadAppointmentServices;
+
+/* If you must try both names, swap the fetch try/catch above for:
+
+  const TYPES = ['Service', 'Services'];
+  for (const type of TYPES) {
+    try {
+      const url = `/api/records/${encodeURIComponent(type)}?limit=1000&ts=${Date.now()}`;
+      const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
+      if (!res.ok) {
+        if (res.status === 404) continue; // swallow plural 404
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const all = await res.json();
+      rows = (all || []).filter(row => {
+        const v = row.values || {};
+        const biz = v['Business'] ?? v['businessId'] ?? v['Business Id'] ?? v['Biz'] ?? v['biz'];
+        return String(getId(biz) || '') === String(businessId);
+      });
+      break; // got one
+    } catch (e) {
+      if ((e.message || '').includes('404')) continue;
+      console.warn('[Services] fetch error for', type, e);
+    }
+  }
+
+*/
+
+
+
+// Render Clients
+// Render Clients (merge both Business ref shapes, then fallback)
+async function loadAppointmentClients(businessId, { selectClientId = null } = {}) {
+  const dropdown = document.getElementById("appointment-client");
+  if (!dropdown) return [];
+
+  if (!businessId || businessId === "all") {
+    dropdown.innerHTML = `<option value="">-- Select Business First --</option>`;
+    return [];
+  }
+
+  dropdown.innerHTML = `<option value="">-- Select Client --</option>`;
+  dropdown.disabled = true;
+
+  const API_URL = (t) => `/api/records/${encodeURIComponent(t)}`;
+
+  const getId = (x) => (x && typeof x === "object") ? String(x._id || x.id || "") : String(x || "");
+  const recordMatchesBusiness = (rec, bizId) => {
+    const b = rec?.values?.["Business"];
+    return getId(b) === String(bizId);
+  };
+
+  async function fetchClients(whereObj, limit = 1000) {
+    const qs = new URLSearchParams({
+      where: JSON.stringify(whereObj || {}),
+      limit: String(limit),
+      ts: Date.now().toString()
+    });
+    const res = await fetch(`${API_URL('Client')}?${qs}`, { credentials: "include", cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  }
+
+  try {
+    // 🔹 fetch BOTH shapes in parallel, then merge
+    const [byId, byObj] = await Promise.all([
+      fetchClients({ "Business": businessId }).catch(() => []),
+      fetchClients({ "Business": { _id: businessId } }).catch(() => []),
+    ]);
+
+    const byKey = new Map();
+    const add = (rows) => rows.forEach(r => {
+      if (recordMatchesBusiness(r, businessId)) byKey.set(String(r._id), r);
+    });
+
+    add(byId);
+    add(byObj);
+
+    // 🔹 nothing yet? fetch all and filter client-side
+    if (byKey.size === 0) {
+      const all = await fetchClients({}).catch(() => []);
+      add(all);
+    }
+
+    // Build list for UI
+    const clients = [...byKey.values()]
+      .filter(r => !r.deletedAt && !(r.values?.["is Deleted"]))
+      .map(r => {
+        const v = r.values || {};
+        const first = (v["First Name"] || v.firstName || "").trim();
+        const last  = (v["Last Name"]  || v.lastName  || "").trim();
+        const email = (v["Email"] || v.email || "").trim();
+        const phone = (v["Phone Number"] || v.phone || v.phoneNumber || "").trim();
+        const label = (first || last) ? `${first} ${last}`.trim() : (email || phone || "(No name)");
+        return { id: String(r._id), label };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    // Populate dropdown
+    clients.forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = c.label;
+      dropdown.appendChild(opt);
+    });
+
+    // Optionally preselect a client (e.g., the one you just created)
+    if (selectClientId) {
+      dropdown.value = String(selectClientId);
+    }
+
+    return clients;
+  } catch (err) {
+    console.error("Failed to load clients:", err);
+    return [];
+  } finally {
+    dropdown.disabled = false;
+  }
+}
+
+
+
+
+
+// auto-fill the duration
+document.getElementById("appointment-service").addEventListener("change", function () {
+  const selectedOption = this.options[this.selectedIndex];
+  const duration = selectedOption.getAttribute("data-duration");
+
+  if (duration) {
+    document.getElementById("appointment-duration").value = duration;
+  }
+});
+
+// New client section in add appointment popup 
+document.addEventListener("DOMContentLoaded", () => {
+  // Support either of your "Add New Client" buttons
+  const newClientButtons = document.querySelectorAll("#btn-new-client, #toggle-new-client-btn");
+
+  // Use the IDs that exist in your HTML
+  const cancelNewClientBtn = document.getElementById("cancel-new-client-btn");
+  const newClientFields = document.getElementById("new-client-fields");          // was "new-client-section" in your JS
+  const existingClientSection = document.getElementById("existing-client-section");
+
+  const showNewClientForm = () => {
+    if (newClientFields) newClientFields.style.display = "block";
+    if (existingClientSection) existingClientSection.style.display = "none";
+    newClientButtons.forEach(btn => { if (btn) btn.style.display = "none"; });
+  };
+
+  const hideNewClientForm = () => {
+    if (newClientFields) newClientFields.style.display = "none";
+    if (existingClientSection) existingClientSection.style.display = "block";
+    newClientButtons.forEach(btn => { if (btn) btn.style.display = "inline-block"; });
+
+    // Clear inputs
+    ["new-client-first-name","new-client-last-name","new-client-email","new-client-phone"]
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+  };
+
+  // Wire up listeners (with null-guards so nothing crashes)
+  newClientButtons.forEach(btn => {
+    if (btn) btn.addEventListener("click", showNewClientForm);
+  });
+  if (cancelNewClientBtn) cancelNewClientBtn.addEventListener("click", hideNewClientForm);
+});
+
+
+// DONE //Save Appointment
+// ---- helpers ----
+const API_URL = (t) => `/api/records/${encodeURIComponent(t)}`;
+
+// Normalize "9:30 AM" or "09:30" into 24h "HH:MM" (safe to store either; this keeps it consistent)
+function to24h(hhmm) {
+  if (!hhmm) return '';
+  const ampm = /\b(AM|PM)\b/i.exec(hhmm);
+  if (!ampm) return hhmm; // assume already "HH:MM"
+  let [h, m] = hhmm.replace(/\s?(AM|PM)/i, '').split(':').map(Number);
+  const isPM = /PM/i.test(ampm[1]);
+  if (isPM && h !== 12) h += 12;
+  if (!isPM && h === 12) h = 0;
+  return `${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}`;
+}
+
+// Find-or-create Client for a Business; returns {clientId, createdNew}
+async function ensureClientId({ businessId, firstName, lastName, email, phone }) {
+  const where = { "Business": businessId };
+  if (email) where["Email"] = email;
+  else if (phone) where["Phone Number"] = phone;
+  else {
+    where["First Name"] = firstName;
+    if (lastName) where["Last Name"] = lastName;
+  }
+
+  // check existing
+  const existsRes = await fetch(`${API_URL('Client')}?where=${encodeURIComponent(JSON.stringify(where))}&limit=1&ts=${Date.now()}`, {
+    credentials: 'include',
+    cache: 'no-store'
+  });
+  if (!existsRes.ok) throw new Error(`Client exists check HTTP ${existsRes.status}`);
+  const existing = await existsRes.json();
+  if (Array.isArray(existing) && existing.length) {
+    return { clientId: existing[0]._id, createdNew: false };
+  }
+
+  // create new
+  const createRes = await fetch(API_URL('Client'), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      values: {
+        "Business":     businessId,
+        "First Name":   firstName || '',
+        "Last Name":    lastName  || '',
+        "Email":        email     || '',
+        "Phone Number": phone     || '',
+        "is Deleted":   false
+      }
+    })
+  });
+  const created = await createRes.json();
+  if (!createRes.ok) throw new Error(created?.message || `Create client HTTP ${createRes.status}`);
+  return { clientId: created._id, createdNew: true };
+}
+// ---- Save / Update Appointment ----
+document.getElementById("create-appointment-form").addEventListener("submit", async function (e) {
+  e.preventDefault();
+
+  const businessId = document.getElementById("appointment-business").value;
+  const serviceId  = document.getElementById("appointment-service").value;
+  const date       = document.getElementById("appointment-date").value;  // YYYY-MM-DD
+  const timeInput  = document.getElementById("appointment-time").value;  // e.g., "9:30 AM"
+  const duration   = document.getElementById("appointment-duration").value;
+
+  // existing client (dropdown)
+  const selectedClientId = document.getElementById("appointment-client").value;
+
+  // potential new client
+  const clientFirstName = document.getElementById("new-client-first-name").value.trim();
+  const clientLastName  = document.getElementById("new-client-last-name").value.trim();
+  const clientEmail     = document.getElementById("new-client-email").value.trim();
+  const clientPhone     = document.getElementById("new-client-phone").value.trim();
+  const isCreatingNewClient = clientFirstName || clientLastName || clientEmail || clientPhone;
+
+  const selectedServiceOption = document.getElementById("appointment-service").selectedOptions[0];
+  const calendarId  = selectedServiceOption?.getAttribute("data-calendar-id");
+  const serviceName = selectedServiceOption?.textContent?.trim() || "";
+  const note        = document.getElementById("appointment-note")?.value || "";
+
+  if (!businessId || !serviceId || !calendarId || !date || !timeInput || !duration || (!selectedClientId && !isCreatingNewClient)) {
+    alert("Please fill in all required fields.");
+    return;
+  }
+
+  // Helper to 24h (keep your existing version if you already have it)
+  function to24h(str) {
+    try {
+      const d = new Date(`1970-01-01 ${str}`);
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      return `${hh}:${mm}`;
+    } catch { return str; }
+  }
+
+  // Use your API helper if present
+  const API_URL = (t) => (window.API ? window.API(t) : `/api/records/${encodeURIComponent(t)}`);
+
+  try {
+    // 1) Ensure we have (or create) a Client
+   // 1) Ensure we have (or create) a Client
+let clientId = selectedClientId || null;
+let createdNew = false;
+
+if (!clientId) {
+  const res = await ensureClientId({
+    businessId,
+    firstName: clientFirstName,
+    lastName:  clientLastName,
+    email:     clientEmail,
+    phone:     clientPhone
+  });
+  clientId   = res.clientId;
+  createdNew = res.createdNew;
+
+  // 🔁 refresh the dropdown so all clients (old + new) are present,
+  // and auto-select the newly created client
+  await loadAppointmentClients(businessId, { selectClientId: clientId });
+}
+
+    // 2) Build Appointment values using OBJECT refs (server normalizer + enrichment expects these)
+    const time24 = to24h(timeInput);
+    const prettyClient =
+      (clientFirstName || clientLastName) ? `${clientFirstName} ${clientLastName}`.trim()
+      : document.querySelector('#appointment-client option:checked')?.textContent?.trim() || 'Client';
+
+    const values = {
+      // 🔴 send references as {_id} so your POST route (and enrichment) can resolve them
+      "Business":   { _id: businessId },
+      "Calendar":   { _id: calendarId },
+      // If your "Service(s)" field allows multiple, keep it as an array
+      "Service(s)": [{ _id: serviceId }],
+      "Client":     { _id: clientId },
+
+      // plain scalars
+      "Date":          date,       // "YYYY-MM-DD"
+      "Time":          time24,     // store consistently in 24h
+      "Duration":      Number(duration) || 0,   // ⬅️ use the exact label your DataType uses (likely "Duration")
+      "Name":          `${serviceName} with ${prettyClient} — ${date} ${timeInput}`,
+      "Note":          note,
+      "is New Client": !!createdNew,
+      "is Canceled":   false,
+      "Hold":          false
+    };
+
+    // 3) Create or Update
+    const isEdit = !!window.currentEditAppointmentId;
+    const url    = isEdit
+      ? `${API_URL('Appointment')}/${window.currentEditAppointmentId}`
+      : API_URL('Appointment');
+    const method = isEdit ? 'PATCH' : 'POST';
+
+    const res = await fetch(url, {
+      method,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values })
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (res.ok) {
+      alert(isEdit ? "✅ Appointment updated!" : "✅ Appointment saved!");
+      if (typeof closeAppointmentPopup === 'function') closeAppointmentPopup();
+      window.currentEditAppointmentId = null;
+      if (typeof loadAppointments === 'function') await loadAppointments();
+    } else {
+      alert(`❌ ${data?.message || data?.error || 'Failed to save appointment.'}`);
+    }
+  } catch (err) {
+    console.error("❌ Failed to save appointment:", err);
+    alert("Something went wrong saving the appointment.");
+  }
+});
+
+
+
+
+// ✅ DOM ready logic
+document.addEventListener("DOMContentLoaded", async () => {
+  console.log("✅ DOM fully loaded");
+  updateMonthYear();
+  updateWeekDates();
+  generateHourColumn();
+  generateTimeGrid();
+  updateWeekDates(currentWeekStart);
+buildHourLabels();
+buildTimeGrid();
+   await loadAppointments();
+  
+
+    // 🕗 Auto-scroll to 8AM
+  setTimeout(() => {
+const wrapper = document.querySelector(".calendar-wrapper");
+if (wrapper) {
+  const slotHeight = 15;
+  const eightAMOffset = 8 * 4 * slotHeight; // = 480px
+  wrapper.scrollTop = eightAMOffset;
+  console.log("🔃 Scrolled to 8AM:", eightAMOffset);
+}
+
+}, 100); // Delay ensures layout is complete
+
+
+    document.getElementById("business-dropdown").addEventListener("change", () => {
+    loadAppointments(); // Re-fetch appointments when business changes
+  });
+
+
+});
+
+//Prevent appointment from submitting if new client is not selected and dropdown is not selected 
+document.addEventListener("DOMContentLoaded", () => {
+  const newClientBtn = document.getElementById("btn-new-client");
+  const cancelNewClientBtn = document.getElementById("cancel-new-client-btn");
+  const newClientFields = document.getElementById("new-client-fields");
+  const clientDropdown = document.getElementById("appointment-client");
+  const appointmentForm = document.getElementById("create-appointment-form");
+
+  // ✚ Show new client form
+  newClientBtn.addEventListener("click", () => {
+    newClientFields.style.display = "block";
+    clientDropdown.closest(".form-group").style.display = "none";
+  });
+
+  // ❌ Cancel new client form
+  cancelNewClientBtn.addEventListener("click", () => {
+    newClientFields.style.display = "none";
+    clientDropdown.closest(".form-group").style.display = "block";
+  });
+
+  // 🧠 Prevent submission if no valid client info
+  appointmentForm.addEventListener("submit", (e) => {
+    const isNewClientVisible = newClientFields.style.display !== "none";
+
+    const selectedClient = clientDropdown.value;
+    const firstName = document.getElementById("new-client-first-name").value.trim();
+    const lastName = document.getElementById("new-client-last-name").value.trim();
+    const email = document.getElementById("new-client-email").value.trim();
+    const phone = document.getElementById("new-client-phone").value.trim();
+
+    if (!isNewClientVisible && !selectedClient) {
+      alert("Please select an existing client or add a new one.");
+      e.preventDefault();
+      return;
+    }
+
+    if (isNewClientVisible && (!firstName || !email || !phone)) {
+      alert("Please fill out at least first name, email, and phone to create a new client.");
+      e.preventDefault();
+      return;
+    }
+
+    // Optionally: auto-generate full name or validate formats
+  });
+});
+
+
+
+// tolerant value getter
+function vget(v, ...keys) {
+  for (const k of keys) if (v && v[k] != null && v[k] !== '') return v[k];
+  return undefined;
+}
+
+async function fetchRecords(type, where = {}, limit = 1000) {
+  const qs = new URLSearchParams({
+    where: JSON.stringify(where),
+    limit: String(limit),
+    ts: Date.now()
+  });
+  const res = await fetch(`/api/records/${encodeURIComponent(type)}?${qs}`, {
+    credentials: 'include', cache: 'no-store'
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// Build { clientId -> "First Last" }
+// Build { clientId -> "First Last" } — merge both Business ref shapes
+async function buildClientMap(businessId, includeAll = false) {
+  const TYPE = "Client";
+
+  const getId = (x) => (x && typeof x === "object") ? String(x._id || x.id || "") : String(x || "");
+  const recordMatchesBusiness = (rec, bizId) => {
+    if (includeAll || !bizId || bizId === "all") return true;
+    return getId(rec?.values?.["Business"]) === String(bizId);
+  };
+
+  async function fetchClients(whereObj) {
+    const qs = new URLSearchParams({
+      where: JSON.stringify(whereObj || {}),
+      limit: "2000",
+      ts: Date.now().toString()
+    });
+    const res = await fetch(`/api/records/${TYPE}?${qs}`, { credentials: "include", cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  }
+
+  // Merge both shapes
+  const merged = new Map();
+  if (!includeAll && businessId && businessId !== "all") {
+    const [byId, byObj] = await Promise.all([
+      fetchClients({ "Business": businessId }).catch(() => []),
+      fetchClients({ "Business": { _id: businessId } }).catch(() => []),
+    ]);
+    [...byId, ...byObj].forEach(r => {
+      if (recordMatchesBusiness(r, businessId)) merged.set(String(r._id), r);
+    });
+
+    // If still empty, fetch all and filter client-side
+    if (merged.size === 0) {
+      const all = await fetchClients({}).catch(() => []);
+      all.forEach(r => { if (recordMatchesBusiness(r, businessId)) merged.set(String(r._id), r); });
+    }
+  } else {
+    const all = await fetchClients({}).catch(() => []);
+    all.forEach(r => merged.set(String(r._id), r));
+  }
+
+  const map = {};
+  [...merged.values()].forEach(r => {
+    const v = r.values || {};
+    const first = (v["First Name"] || v.firstName || "").trim();
+    const last  = (v["Last Name"]  || v.lastName  || "").trim();
+    const label = (first || last) ? `${first} ${last}`.trim()
+                 : (v["Email"] || v.email || "(Client)");
+    map[String(r._id)] = label;
+  });
+
+  window.__clientMap = map; // optional global
+  return map;
+}
+
+
+// Build { serviceId -> "Service Name" } – try both "Service"/"Services"
+// Build { serviceId -> "Service Name" } — robust to Business ref shape
+// Build { serviceId -> "Service Name" } — lenient & business-aware
+// Build { serviceId -> "Service Name" } — merge both "Service" and "Services"
+ function sameBiz(rec, bizId) {
+    if (includeAll || !bizId || bizId === 'all') return true;
+    const v = rec?.values || {};
+    const b = v['Business'] ?? v['businessId'] ?? v['Business Id'] ?? v['Biz'] ?? v['biz'];
+    const id = (b && typeof b === 'object') ? (b._id || b.id) : b;
+    return String(id || '') === String(bizId);
+  }
+
+// Build { serviceId -> "Service Name" } — singular only, filter by Business
+async function buildServiceMap(businessId, includeAll = false) {
+  function sameBiz(rec, bizId) {
+    if (includeAll || !bizId || bizId === 'all') return true;
+    const v = rec?.values || {};
+    const b = v['Business'] ?? v['businessId'] ?? v['Business Id'] ?? v['Biz'] ?? v['biz'];
+    const id = (b && typeof b === 'object') ? (b._id || b.id) : b;
+    return String(id || '') === String(bizId);
+  }
+
+  const rows = await fetchRecords('Service', {}, 2000).catch(() => []);
+  const map = {};
+  (rows || []).forEach(r => {
+    if (!sameBiz(r, businessId)) return;
+    const v = r.values || {};
+    const name = v['Name'] || v['Service Name'] || v.serviceName || '(Service)';
+    map[String(r._id)] = name;
+  });
+
+  window.__serviceMap = map; // optional global
+  return map;
+}
+
+
+async function openAppointmentPopup(appointment = null) {
+  // ... your existing reset code ...
+
+  await loadAppointmentBusinesses();
+
+  // preselect business from main filter if present
+  const mainBizSel = document.getElementById('business-dropdown');
+  const apptBizSel = document.getElementById('appointment-business');
+
+  if (mainBizSel?.value && mainBizSel.value !== 'all') {
+    apptBizSel.value = mainBizSel.value;
+    await loadAppointmentServices(mainBizSel.value);
+  } else {
+    document.getElementById('appointment-service').innerHTML = `<option value="">-- Select Business First --</option>`;
+  }
+
+  // make sure the duration change handler is bound
+  ensureServiceDurationBound();
+
+  // if EDIT mode, preselect the service, then prefill duration
+  if (appointment) {
+    const serviceId = appointment.serviceId?._id || appointment.serviceId;
+    document.getElementById('appointment-service').value = serviceId || '';
+    afterServicesLoadedMaybeSetDefaults(serviceId);
+  } else {
+    // CREATE mode: just prefill if something is already selected
+    afterServicesLoadedMaybeSetDefaults();
+  }
+
+  // also bind business->services reload once
+  const bizSel = document.getElementById('appointment-business');
+  if (bizSel && !bizSel.dataset.bound) {
+    bizSel.addEventListener('change', async (e) => {
+      await loadAppointmentServices(e.target.value);
+      afterServicesLoadedMaybeSetDefaults();    // prefill after reload
+    });
+    bizSel.dataset.bound = '1';
+  }
+
+  // ... show popup ...
+}
+
+//DONE new appointment
+async function openAppointmentPopup(appointment = null) {
+  // helpers
+  const getV = (v, ...keys) => { for (const k of keys) if (v && v[k] != null) return v[k]; };
+  const firstId = (val) => {
+    if (Array.isArray(val)) return firstId(val[0]);
+    if (val && typeof val === 'object') return val._id || val.id || val.value || '';
+    return val || '';
+  };
+
+  const form       = document.getElementById("create-appointment-form");
+  const popup      = document.getElementById("popup-create-appointment");
+  const overlay    = document.getElementById("popup-overlay");
+  const titleEl    = document.getElementById("appointment-popup-title");
+  const deleteBtn  = document.getElementById("delete-appointment-btn");
+
+  const bizSel     = document.getElementById("appointment-business");
+  const svcSel     = document.getElementById("appointment-service");
+  const clientSel  = document.getElementById("appointment-client");
+  const dateInp    = document.getElementById("appointment-date");
+  const timeInp    = document.getElementById("appointment-time");
+  const durInp     = document.getElementById("appointment-duration");
+
+  // expose a global flag you already use
+  window.currentEditAppointmentId = appointment ? appointment._id : null;
+
+  // delete button visibility
+  if (deleteBtn) {
+    deleteBtn.style.display = window.currentEditAppointmentId ? "inline-block" : "none";
+  }
+
+  // title
+  if (titleEl) {
+    titleEl.textContent = window.currentEditAppointmentId ? "Edit Appointment" : "Add Appointment";
+  }
+
+  // reset base UI
+  if (form && !appointment) form.reset();
+  if (svcSel)    svcSel.innerHTML   = `<option value="">-- Select Service --</option>`;
+  if (clientSel) clientSel.innerHTML= `<option value="">-- Select Client --</option>`;
+  if (bizSel)    bizSel.innerHTML   = `<option value="">-- Select Business --</option>`;
+
+  // ALWAYS load businesses
+  await loadAppointmentBusinesses();
+
+  if (!appointment) {
+    // ===== CREATE MODE =====
+    const mainBusiness = document.getElementById("business-dropdown")?.value || "";
+    if (bizSel && mainBusiness) {
+      bizSel.value = mainBusiness;
+      await loadAppointmentServices(mainBusiness);
+      await loadAppointmentClients(mainBusiness);
+    }
+    // clear fields (in case)
+    if (dateInp) dateInp.value = "";
+    if (timeInp) timeInp.value = "";
+    if (durInp)  durInp.value  = "";
+
+  } else {
+    // ===== EDIT MODE =====
+    const v = appointment.values || {};
+
+    // IDs
+    const businessId = firstId(getV(v, "Business", "businessId", "Business Id"));
+    const clientId   = firstId(getV(v, "Client", "clientId"));
+    // "Service(s)" might be array; if single-select dropdown, pick first
+    const serviceRaw = getV(v, "Service(s)", "Service", "serviceId", "service");
+    const serviceId  = firstId(serviceRaw);
+
+    // Preselect business
+    if (bizSel && businessId) bizSel.value = businessId;
+
+    // Load services/clients for that business, then select
+    if (businessId) {
+      await loadAppointmentServices(businessId);
+      await loadAppointmentClients(businessId);
+    }
+
+    if (svcSel && serviceId)   svcSel.value   = serviceId;
+    if (clientSel && clientId) clientSel.value= clientId;
+
+    // Date / Time / Duration (tolerant keys)
+    const dateVal = getV(v, "Date", "date") || "";
+    if (dateInp) dateInp.value = String(dateVal).split("T")[0] || "";
+
+    const timeVal = getV(v, "Time", "time", "Start Time") || "";
+    if (timeInp) timeInp.value = timeVal;
+
+    const duration = getV(v, "duration", "Duration", "Length", "length");
+    if (durInp && duration != null) durInp.value = duration;
+
+    // TODO: If you add Note / flags, prefill them here the same way:
+    // document.getElementById("appointment-note").value = getV(v, "Note","note") || "";
+    // document.getElementById("is-hold")?.checked       = !!getV(v, "Hold","hold");
+    // ...etc.
+  }
+
+  // show popup
+  if (popup)   popup.style.display = "block";
+  if (overlay) overlay.style.display = "block";
+  document.body.classList.add("popup-open");
+}
+
+
+//DONE Delete appointment
+// Soft delete Appointment (sets deletedAt on the record)
+document.getElementById("delete-appointment-btn")?.addEventListener("click", async () => {
+  if (!window.currentEditAppointmentId) return;
+
+  if (!confirm("Are you sure you want to delete this appointment?")) return;
+
+  // optional: UI disable while working
+  const btn = document.getElementById("delete-appointment-btn");
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await fetch(`${API_URL('Appointment')}/${window.currentEditAppointmentId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      cache: 'no-store'
+    });
+
+    const result = await res.json().catch(() => ({}));
+
+    if (res.ok) {
+      alert("🗑️ Appointment deleted.");
+      if (typeof closeAppointmentPopup === 'function') closeAppointmentPopup();
+      window.currentEditAppointmentId = null;
+      if (typeof loadAppointments === 'function') await loadAppointments();
+    } else {
+      alert(`❌ Failed to delete: ${result?.message || `HTTP ${res.status}`}`);
+    }
+  } catch (err) {
+    console.error("❌ Error deleting appointment:", err);
+    alert("Something went wrong.");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
+
+
+
+
+////////helper functions 
+function getDayIndexFromDate(dateStr) {
+  const [targetYear, targetMonth, targetDay] = dateStr.split("-").map(Number);
+
+  for (let i = 0; i < currentWeekDates.length; i++) {
+    const date = new Date(currentWeekDates[i]);
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+
+    if (
+      year === targetYear &&
+      month === targetMonth &&
+      day === targetDay
+    ) {
+      return i;
+    }
+  }
+
+  return -1; // Not found
+}
+
+
+
+function getCurrentWeekStartDate() {
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // Sunday = 0
+  const sunday = new Date(today);
+  sunday.setDate(today.getDate() - dayOfWeek);
+  sunday.setHours(0, 0, 0, 0);
+  return sunday;
+}
+
+function getTopOffsetFromTime(timeStr) {
+  const [hourStr, minuteStr] = timeStr.split(":");
+  const hour = parseInt(hourStr, 10);
+  const minute = parseInt(minuteStr, 10);
+
+  // 15px per 15-minute block
+  return (hour * 4 + minute / 15) * 15;
+}
+
+
+function formatTimeTo12Hour(timeStr) {
+  const [hour, minute] = timeStr.split(":").map(Number);
+  const ampm = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${minute.toString().padStart(2, "0")} ${ampm}`;
+}
+
+function getWeekDifferenceFromToday(dateStr) {
+  const currentWeekStart = getCurrentWeekStartDate();
+  const targetDate = new Date(dateStr);
+  const targetWeekStart = getStartOfWeek(targetDate);
+
+  const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+  const weekDiff = Math.round((targetWeekStart - currentWeekStart) / msPerWeek);
+  return weekDiff;
+}
+
+function getStartOfWeek(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // Sunday = 0
+  d.setDate(d.getDate() - day);
+  return d;
+}
+
+//////////////////////Sidebar////////////
+//All Clients popup
+//DONE
+// Open the inline client list popup and load businesses + clients
+async function openClientListPopup() {
+  const sel = document.getElementById("inline-client-business");
+  if (!sel) return;
+
+  // Base UI
+  sel.innerHTML = `<option value="all">📅 All Businesses</option>`;
+
+  try {
+    // Pull businesses via unified API
+    const res = await fetch(`${API('Business')}?limit=1000&ts=${Date.now()}`, {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    const rows = res.ok ? await res.json() : [];
+
+    // Sort & render
+    rows
+      .filter(r => !r.deletedAt)
+      .sort((a, b) =>
+        (a?.values?.businessName || a?.values?.Name || '')
+          .localeCompare(b?.values?.businessName || b?.values?.Name || '')
+      )
+      .forEach(biz => {
+        const opt = document.createElement("option");
+        opt.value = biz._id;
+        opt.textContent = biz.values?.businessName || biz.values?.Name || "Unnamed Business";
+        sel.appendChild(opt);
+      });
+
+    // Preselect current/last business if present
+    const current = document.getElementById("business-dropdown")?.value || '';
+    const last    = window.lastEditedBusinessId || '';
+
+    if (current && sel.querySelector(`option[value="${current}"]`)) {
+      sel.value = current;
+    } else if (last && sel.querySelector(`option[value="${last}"]`)) {
+      sel.value = last;
+    } else {
+      // keep "All" by default
+      sel.value = "all";
+    }
+  } catch (err) {
+    console.error("Failed to load businesses for client popup:", err);
+    // fall back to All
+    sel.value = "all";
+  }
+
+  // Load clients for the selected business (or all)
+  await loadClientList(sel.value === "all" ? null : sel.value);
+
+  // Re-load clients when the inline dropdown changes
+  if (!sel.dataset.bound) {
+    sel.addEventListener("change", () => {
+      loadClientList(sel.value === "all" ? null : sel.value);
+    });
+    sel.dataset.bound = "1";
+  }
+
+
+
+  // Show the popup
+  document.getElementById("popup-view-clients").style.display = "block";
+  document.getElementById("popup-overlay").style.display = "block";
+  document.body.classList.add("popup-open");
+}
+
+function closeClientListPopup() {
+  document.getElementById("popup-view-clients").style.display = "none";
+  document.getElementById("popup-overlay").style.display = "none";
+  document.body.classList.remove("popup-open");
+}
+
+// render client list
+function getV(v, ...keys) {
+  for (const k of keys) {
+    if (v?.[k] !== undefined && v[k] !== null) return v[k];
+  }
+  return '';
+}
+
+/**
+/**
+ * Load and render the client list.
+ * @param {string} businessId - pass a Business _id to filter, or 'all' / '' for all.
+ */
+async function loadClientList(businessId = 'all') {
+  const container = document.getElementById("client-list-container");
+  if (!container) return;
+  container.innerHTML = "<p>Loading...</p>";
+
+  // helper to match Business whether it's stored as string or {_id}
+  function recordMatchesBusiness(rec, bizId) {
+    if (!bizId || bizId === 'all') return true;
+    const v = rec?.values || {};
+    const b = v["Business"];
+    if (!b) return false;
+    if (typeof b === "string") return b === bizId;
+    if (typeof b === "object" && b._id) return String(b._id) === String(bizId);
+    return false;
+  }
+
+  async function fetchClients(whereObj, limit = 1000) {
+    const params = new URLSearchParams({
+      where: JSON.stringify(whereObj || {}),
+      limit: String(limit),
+      ts: Date.now().toString()
+    });
+    const res = await fetch(`/api/records/Client?${params.toString()}`, {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(()=> '');
+      throw new Error(`HTTP ${res.status} ${msg}`);
+    }
+    return res.json();
+  }
+
+  try {
+    let rows = [];
+
+    if (businessId && businessId !== 'all') {
+      // 1) try Business as plain id
+      rows = await fetchClients({ "Business": businessId, "is Deleted": false });
+
+      // 2) if none, try Business as {_id: ...}
+      if (!Array.isArray(rows) || rows.length === 0) {
+        rows = await fetchClients({ "Business": { _id: businessId }, "is Deleted": false });
+      }
+
+      // 3) still none? fetch all (is Deleted false) and filter client-side by Business
+      if (!Array.isArray(rows) || rows.length === 0) {
+        rows = await fetchClients({ "is Deleted": false });
+        rows = rows.filter(r => recordMatchesBusiness(r, businessId));
+      } else {
+        // defensively filter anyway
+        rows = rows.filter(r => recordMatchesBusiness(r, businessId));
+      }
+    } else {
+      // all businesses, just exclude deleted
+      rows = await fetchClients({ "is Deleted": false });
+    }
+
+    // Map to flat client objects
+    const clients = (rows || [])
+      .filter(r => !r.deletedAt && !(r.values?.["is Deleted"]))
+      .map(r => {
+        const v = r.values || {};
+        // extract Business id robustly for later use if needed
+        const bVal = getV(v, "Business", "businessId");
+        const bizIdVal = (bVal && typeof bVal === "object" && bVal._id) ? bVal._id : bVal;
+
+        return {
+          _id: r._id,
+          firstName:   getV(v, "First Name", "firstName"),
+          lastName:    getV(v, "Last Name",  "lastName"),
+          email:       getV(v, "Email",      "email"),
+          phone:       getV(v, "Phone Number","phone", "phoneNumber"),
+          businessId:  bizIdVal || '',
+        };
+      });
+
+    // Sort A→Z by full name
+    clients.sort((a, b) => {
+      const nameA = `${a.firstName || ""} ${a.lastName || ""}`.trim().toLowerCase();
+      const nameB = `${b.firstName || ""} ${b.lastName || ""}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    // Render
+    container.innerHTML = "";
+    if (!clients.length) {
+      container.innerHTML = `<p>No clients yet.</p>`;
+      return;
+    }
+
+    clients.forEach(client => {
+      const name = `${client.firstName || ""} ${client.lastName || ""}`.trim() || "(No name)";
+      const item = document.createElement("div");
+      item.textContent = name;
+      item.classList.add("clickable-client");
+      item.style.padding = "8px 0";
+      item.addEventListener("click", () => showClientDetail(client));
+      container.appendChild(item);
+    });
+
+  } catch (err) {
+    console.error("❌ Failed to load clients:", err);
+    container.innerHTML = "<p>Error loading clients.</p>";
+  }
+}
+
+
+//DONE Show Client Detail 
+function showClientDetail(client) {
+  // Hide list + inline add section
+  const listEl = document.getElementById("client-list-container");
+  const addEl  = document.getElementById("inline-add-client-section");
+  if (listEl) listEl.style.display = "none";
+  if (addEl)  addEl.style.display  = "none";
+
+  // Show detail section
+  const detailSection = document.getElementById("client-detail-section");
+  if (detailSection) detailSection.style.display = "block";
+
+  // Fill data
+  const name   = `${client.firstName} ${client.lastName || ""}`.trim() || "(No name)";
+  const email  = client.email ? `📧 ${client.email}` : "❌ No email";
+  const phone  = client.phone ? `📞 ${client.phone}` : "❌ No phone";
+
+  const nameEl  = document.getElementById("detail-name");
+  const emailEl = document.getElementById("detail-email");
+  const phoneEl = document.getElementById("detail-phone");
+
+  if (nameEl)  nameEl.textContent  = name;
+  if (emailEl) emailEl.textContent = email;
+  if (phoneEl) phoneEl.textContent = phone;
+
+  // Placeholder stats (replace with real counts later if desired)
+  const statsEl = document.getElementById("detail-stats");
+  if (statsEl) {
+    statsEl.innerHTML = `
+      <strong>Appointments:</strong> 0<br>
+      <strong>Cancellations:</strong> 0<br>
+      <strong>No Shows:</strong> 0
+    `;
+  }
+
+  // Make the toggle button neutral in detail mode (optional)
+  const toggleBtn = document.getElementById("toggle-add-client-btn");
+  if (toggleBtn) {
+    toggleBtn.textContent = "Add New Client";
+    toggleBtn.classList.add("no-background");
+  }
+}
+
+
+
+function backToClientList() {
+  document.getElementById("client-detail-section").style.display = "none";
+  document.getElementById("client-list-container").style.display = "block";
+}
+//Show add client section 
+function showAddClientSection() {
+  const addSection = document.getElementById("inline-add-client-section");
+  const clientList = document.getElementById("client-list-container");
+  const clientDetail = document.getElementById("client-detail-section");
+  const toggleBtn = document.getElementById("toggle-add-client-btn");
+
+  const isHidden = addSection.style.display === "none";
+
+  // Toggle visibility
+  addSection.style.display = isHidden ? "block" : "none";
+  clientList.style.display = isHidden ? "none" : "block";
+  clientDetail.style.display = "none";
+
+  // Change button text
+  toggleBtn.textContent = isHidden ? "View All Clients" : "Add New Client";
+
+  // Always reset background when toggling
+  toggleBtn.classList.remove("no-background");
+}

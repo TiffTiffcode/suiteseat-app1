@@ -1,0 +1,396 @@
+/* Hide the default booking-page hero when Spotlight template is active */
+body[data-template="spotlight"] .container > #hero { display: none; }
+
+/* (optional) tidy spacing if you see extra gap */
+body[data-template="spotlight"] .container { padding-top: 0; }
+body[data-template="spotlight"] .hero { display: none; }
+
+/* Edit-mode pin on the logo section */
+body[data-edit="1"] #tpl-logo {
+  position: relative;
+  outline: 2px dashed transparent;
+  transition: outline-color .15s;
+}
+body[data-edit="1"] #tpl-logo:hover {
+  outline-color: rgba(124,138,255,.35);
+}
+body[data-edit="1"] #tpl-logo.is-drop {
+  outline-color: rgba(124,138,255,.8);
+  background: rgba(124,138,255,.06);
+}
+
+body[data-edit="1"] .tpl-edit-pin {
+  position: absolute;
+  top: 10px; right: 10px;
+  width: 34px; height: 34px;
+  border: 1px solid var(--line, #2a3350);
+  background: #fff;
+  color: #111;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+body[data-edit="1"] .tpl-edit-pin:hover {
+  transform: translateY(-1px);
+}
+/* Root */
+:root { --bg:#0f1220; --paper:#151a2b; --ink:#e7ecf7; --muted:#9aa7bd; --line:#2a3350; --accent:#7c8aff; }
+/* keep the visual styling on the template container */
+.tpl-showcase { background:var(--bg); color:var(--ink); }
+
+
+/* Policy (3 images, always horizontal, no overlap, show whole image) */
+/* Always 3 across; shrink padding/gap on small screens */
+/* Policy – 3 images, always horizontal */
+/* Policy – 3 images: 3-up / 2-up / stacked */
+#tpl-policy.tpl-policy--images {
+  padding-left:  clamp(6px, 2vw, 16px);
+  padding-right: clamp(6px, 2vw, 16px);
+  box-sizing: border-box;
+}
+
+#tpl-policy.tpl-policy--images .tpl-policy__images {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(8px, 2vw, 14px);
+}
+
+@media (max-width: 900px) {
+  #tpl-policy.tpl-policy--images .tpl-policy__images {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  #tpl-policy.tpl-policy--images .tpl-policy__images {
+    grid-template-columns: 1fr; /* stack */
+  }
+}
+
+/* Tiles & images */
+#tpl-policy.tpl-policy--images .tpl-policy-img {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--paper);
+  aspect-ratio: 4 / 5;        /* adjust shape if you want */
+}
+
+#tpl-policy.tpl-policy--images .tpl-policy-img > img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;           /* change to 'contain' if you want the whole photo visible */
+  display: block;
+}
+
+
+/* show an X pin in edit mode */
+body[data-edit="1"] .tpl-section { position: relative; }
+body[data-edit="1"] .tpl-delete-pin{
+  position:absolute; top:8px; left:8px; /* left side so it won't clash with your + pin on the right */
+  width:28px; height:28px; border-radius:999px;
+  background:#ff3b30; color:#fff; border:1px solid #fff3;
+  display:flex; align-items:center; justify-content:center;
+  font-size:18px; line-height:1; cursor:pointer; z-index:5;
+}
+body[data-edit="1"] .tpl-delete-pin:hover{ filter:brightness(1.1); }
+
+/* when a section is removed, collapse it entirely */
+.tpl-section.is-removed{ display:none !important; }
+/* anchor the pin to the policy section in edit mode */
+body[data-edit="1"] #tpl-policy { position: relative; }
+
+/* X pin look/placement (match your edit pin style if you want) */
+body[data-edit="1"] .tpl-remove-pin {
+  position: absolute;
+  top: 10px; right: 10px;
+  z-index: 25;
+  width: 34px; height: 34px;
+  border: 1px solid var(--line, #2a3350);
+  background: #fff;
+  color: #111;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+body[data-edit="1"] .tpl-remove-pin:hover { transform: translateY(-1px); }
+/* anchor the pin to the section in edit mode */
+body[data-edit="1"] #tpl-gallery { position: relative; }
+
+/* ensure remove pin floats above the overlay arrows */
+body[data-edit="1"] .tpl-remove-pin { z-index: 100; top: 10px; left: 10px; }
+
+body[data-edit="1"] .is-editable.is-empty {
+  min-height: 160px;             /* adjust if you want a taller placeholder */
+  border: 2px dashed var(--line, #2a3350);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted, #9aa7bd);
+  background: #0b0e1a;
+}
+/* ---- resizer handles for edit mode ---- */
+body[data-edit="1"] .ss-resizable { position: relative; display: inline-block; }
+
+body[data-edit="1"] .ss-rh {
+  position: absolute;
+  width: 12px; height: 12px;
+  background: #fff; border: 1px solid var(--line, #2a3350); border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.2);
+  z-index: 2;
+}
+body[data-edit="1"] .ss-rh-e { right: -6px;  top: 50%; transform: translateY(-50%); cursor: e-resize; }
+body[data-edit="1"] .ss-rh-w { left:  -6px;  top: 50%; transform: translateY(-50%); cursor: w-resize; }
+body[data-edit="1"] .ss-rh-n { top:   -6px;  left: 50%; transform: translateX(-50%); cursor: n-resize; }
+body[data-edit="1"] .ss-rh-s { bottom:-6px;  left: 50%; transform: translateX(-50%); cursor: s-resize; }
+
+/* Header */
+/* Button chrome (matches your template) */
+/* Header inherits the theme background color */
+.tpl-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 16px;
+  border-bottom:1px solid var(--line);
+  position:sticky; top:0; z-index:40;
+  background: var(--bg);
+  backdrop-filter: blur(8px); /* optional, keep if you like the glassy look */
+}
+.tpl-burger {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);  /* SVG uses currentColor */
+}
+
+/* SVG size */
+.tpl-burger__icon {
+  width: 22px;
+  height: 22px;
+  /* ensure it uses currentColor for stroke */
+  stroke: currentColor;
+  fill: none;
+}
+
+/* If you still have the old span rules, neutralize them */
+.tpl-burger span { display: none; }
+.tpl-burger span { width:18px; height:2px; background:var(--ink); display:block; }
+.tpl-auth { display:flex; gap:10px; align-items:center; }
+.tpl-link { color:var(--ink); text-decoration:none; font-weight:600; opacity:.85; }
+.tpl-link:hover { opacity:1; }
+.tpl-btn { color:#111; background:var(--ink); padding:6px 10px; border-radius:8px; text-decoration:none; font-weight:700; }
+
+/* Drawer */
+.tpl-drawer { position:fixed; inset:0; pointer-events:none; z-index:60; }
+.tpl-drawer__scrim { position:absolute; inset:0; background:#0008; opacity:0; transition:opacity .2s; }
+.tpl-drawer__panel { position:absolute; top:0; left:0; bottom:0; width:280px; background:var(--paper); border-right:1px solid var(--line); transform:translateX(-100%); transition:transform .25s; padding:14px; }
+.tpl-drawer.is-open { pointer-events:auto; }
+.tpl-drawer.is-open .tpl-drawer__scrim { opacity:1; }
+.tpl-drawer.is-open .tpl-drawer__panel { transform:none; }
+.tpl-drawer__title { font-weight:800; margin-bottom:10px; }
+.tpl-drawer__list { list-style:none; margin:0; padding:0; display:grid; gap:4px; }
+.tpl-drawer__item { width:100%; text-align:left; color:var(--ink); background:transparent; border:1px solid var(--line); border-radius:10px; padding:10px 12px; cursor:pointer; }
+.tpl-drawer__item:hover { border-color:var(--accent); }
+
+/* Sections */
+.tpl-section { padding:18px 16px; border-bottom:1px solid var(--line); }
+.tpl-logo { display:flex; justify-content:center; }
+/* Logo – auto size with bounds */
+/* Logo auto-sizes to the image; section height follows */
+/* Final override so logo grows/shrinks with its image */
+#tpl-logo-img { width: 100% !important; height: auto !important; max-width: none; }
+
+
+
+/* Gallery */
+/* Single-slide slider */
+.tpl-gallery { position:relative; }
+.tpl-gallery__viewport { overflow:hidden; border:1px solid var(--line); border-radius:14px; }
+.tpl-gallery__strip { display:flex; gap:0; transition:transform .25s; }
+.tpl-gallery__strip img { width:100%; height:320px; object-fit:cover; flex:0 0 100%; background:#0b0e1a; border-right:1px solid var(--line); }
+@media (min-width: 900px) { .tpl-gallery__strip img { height:420px; } }
+
+/* Fixed-height gallery (change 360px to whatever you want) */
+#tpl-gallery-viewport { height: 460px; }
+#tpl-gallery-strip { height: 100%; }
+#tpl-gallery-strip .tpl-gallery__item { height: 100%; }
+#tpl-gallery-strip img {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;   /* crop to fill without distortion */
+  display: block;
+}
+
+/* Wrap each slide so we can position edit controls */
+.tpl-gal-item { position:relative; width:100%; flex:0 0 100%; }
+
+/* Per-image edit button (only added in edit mode by JS) */
+.tpl-gal-edit {
+  position:absolute; top:10px; right:10px;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:36px; height:36px; border-radius:999px; border:1px solid #fff8;
+  background:#000c; color:#fff; cursor:pointer;
+  backdrop-filter: blur(4px);
+}
+
+/* “Add photo” slide (only in edit mode) */
+.tpl-gal-add {
+  flex:0 0 100%;
+  display:flex; align-items:center; justify-content:center;
+  height:320px; border:2px dashed var(--line); border-radius:12px;
+  color:var(--ink); background:#0b0e1a;
+}
+@media (min-width: 900px) { .tpl-gal-add { height:420px; } }
+
+/* Force gallery to 1 image per view */
+/* Hide horizontal scrollbar but keep touch/trackpad swiping */
+.tpl-gallery__viewport { scrollbar-width: none; }
+.tpl-gallery__viewport::-webkit-scrollbar { display: none; }
+
+/* Overlay arrows inside the image */
+.tpl-gallery { position: relative; }
+.tpl-gallery__arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42px; height: 42px;
+  border: none; border-radius: 999px;
+  background: rgba(0,0,0,.45);
+  color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 10;
+}
+.tpl-gallery__arrow:hover { background: rgba(0,0,0,.65); }
+.tpl-gallery__arrow.left  { left: 10px; }
+.tpl-gallery__arrow.right { right: 10px; }
+.tpl-arrow-icon { font-size: 24px; line-height: 1; pointer-events: none; }
+
+/* Image sections */
+.tpl-image { display:flex; justify-content:center; }
+.tpl-image img { width:100%; max-width:980px; height:auto; border-radius:14px; border:1px solid var(--line); background:#0b0e1a; }
+.tpl-image--large img { max-width:1200px; }
+
+/* Banner (location) */
+.tpl-banner img { width:100%; height:120px; object-fit:cover; border-radius:12px; border:1px solid var(--line); }
+
+/* Policy */
+/* Edit affordances for policy cards */
+body[data-edit="1"] .tpl-card__text[contenteditable="true"] {
+  outline: 2px dashed rgba(124,138,255,.35);
+  outline-offset: 4px;
+  transition: background .15s, outline-color .15s;
+}
+body[data-edit="1"] .tpl-card__text[contenteditable="true"]:focus {
+  background: rgba(124,138,255,.08);
+  outline-color: rgba(124,138,255,.8);
+}
+body[data-edit="1"] .tpl-card__icon.is-editable {
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 2px 6px;
+  outline: 2px dashed transparent;
+}
+body[data-edit="1"] .tpl-card__icon.is-editable:hover {
+  outline-color: rgba(124,138,255,.35);
+  background: rgba(124,138,255,.06);
+}
+/* Policy icon can be an emoji or an image */
+.tpl-card__icon img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: inline-block;
+  vertical-align: middle;
+}
+/* --- resizable handles for policy icons (edit mode) --- */
+body[data-edit="1"] .ss-resizable { position: relative; display: inline-block; }
+body[data-edit="1"] .ss-rh {
+  position:absolute; width:16px; height:16px; border-radius:999px;
+  background:#111; color:#fff; border:1px solid #fff8;
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; transition:opacity .12s; pointer-events:auto; font-size:12px; line-height:1;
+}
+
+/* Edit affordances for Styles & Location sections */
+body[data-edit="1"] #tpl-styles,
+body[data-edit="1"] #tpl-location {
+  position: relative;                 /* anchor the pin */
+  outline: 2px dashed transparent;
+  transition: outline-color .15s;
+}
+body[data-edit="1"] #tpl-styles:hover,
+body[data-edit="1"] #tpl-location:hover {
+  outline-color: rgba(124,138,255,.35);
+}
+/* Show an empty state + give height in edit mode when no image yet */
+body[data-edit="1"] #tpl-styles,
+body[data-edit="1"] #tpl-location,
+body[data-edit="1"] #tpl-image-1,
+body[data-edit="1"] #tpl-image-2 {
+  position: relative; /* so the pin can sit top-right */
+}
+
+body[data-edit="1"] #tpl-styles.is-empty,
+body[data-edit="1"] #tpl-location.is-empty,
+body[data-edit="1"] #tpl-image-1.is-empty,
+body[data-edit="1"] #tpl-image-2.is-empty {
+  min-height: 160px;                 /* visible drop/pin target */
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ensure the inner <img> doesn’t collapse the dashed area before it loads */
+#tpl-styles-img, #tpl-location-img, #tpl-image-1-img, #tpl-image-2-img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+body[data-edit="1"] .ss-resizable:hover .ss-rh { opacity:1; }
+.ss-rh-e{ right:-8px; top:50%; transform:translateY(-50%); cursor: ew-resize; }
+.ss-rh-w{ left:-8px;  top:50%; transform:translateY(-50%); cursor: ew-resize; }
+.ss-rh-n{ top:-8px;   left:50%; transform:translateX(-50%); cursor: ns-resize; }
+.ss-rh-s{ bottom:-8px;left:50%; transform:translateX(-50%); cursor: ns-resize; }
+.ss-rh::before{ content: attr(data-arrow); }  /* shows ‹ › ˄ ˅ on the dots */
+
+.tpl-policy__grid { display:grid; gap:12px; grid-template-columns:repeat(2, minmax(0,1fr)); }
+@media (min-width: 900px) { .tpl-policy__grid { grid-template-columns:repeat(4, 1fr); } }
+.tpl-card { background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:14px; text-align:center; }
+.tpl-card__icon { font-size:28px; margin-bottom:10px; }
+.tpl-card__text { color:var(--ink); opacity:.9; }
+
+/* Booking flow area tweaks (horizontal calendars) */
+body[data-template="showcase"] #calendars {
+  display:flex; gap:12px; overflow-x:auto; padding-bottom:6px;
+}
+body[data-template="showcase"] #calendars .card,
+body[data-template="showcase"] #calendars > * {
+  min-width:220px;
+}
+
+/* Footer */
+.tpl-footer { padding:16px; text-align:center; color:var(--muted); }
+.tpl-powered strong { color:var(--ink); }
+
+/* Modal */
+.tpl-modal { position:fixed; inset:0; display:none; z-index:70; }
+.tpl-modal[aria-hidden="false"] { display:block; }
+.tpl-modal__scrim { position:absolute; inset:0; background:#0008; }
+.tpl-modal__panel { position:relative; margin:10vh auto; width:min(560px, calc(100vw - 32px)); background:var(--paper); border:1px solid var(--line); border-radius:16px; padding:16px; color:var(--ink); }
+.tpl-modal__close { position:absolute; top:8px; right:10px; background:transparent; color:var(--ink); border:none; font-size:22px; cursor:pointer; }
+.tpl-modal__title { margin:0 0 8px; }
+.tpl-modal__body a { color:var(--ink); text-decoration:underline; }
+
+
+

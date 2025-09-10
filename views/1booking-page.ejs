@@ -1,0 +1,128 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Book an Appointment</title>
+  <link rel="stylesheet" href="/qassets/css/booking-page2.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body>
+  <div class="container">
+    <!-- HERO -->
+    <section id="hero" class="hero">
+      <img id="heroImg" class="hero__img" src="" alt="" />
+      <div class="hero__meta">
+        <h1 id="bizName" class="hero__title">Loading…</h1>
+        <div id="bizSub" class="hero__sub"></div>
+      </div>
+    </section>
+
+    <!-- CALENDARS -->
+    <section class="section">
+      <h3 class="section__title">Choose a calendar</h3>
+      <div id="calendars" class="grid grid--3"></div>
+    </section>
+
+    <!-- CATEGORIES -->
+    <section class="section" id="section-cats" style="display:none;">
+      <h3 class="section__title">Choose a category</h3>
+      <div id="categories" class="grid grid--3"></div>
+    </section>
+
+    <!-- SERVICES -->
+    <section class="section" id="section-services" style="display:none;">
+      <div class="row" style="justify-content:space-between;align-items:center;">
+        <h3 class="section__title">Choose service(s)</h3>
+        <label class="toggle">
+          <input id="toggle-multi" type="checkbox" />
+          Add Multiple Services
+        </label>
+      </div>
+      <div id="services" class="grid grid--2"></div>
+      <div class="divider"></div>
+      <div id="summary" class="badge" style="display:none;"></div>
+    </section>
+
+    <!-- AVAILABILITY -->
+    <section class="section" id="section-availability" style="display:none;">
+      <h3 class="section__title">Availability</h3>
+      <div id="datePicker" class="calendar"></div>
+      <div id="timeslots" class="timeslots"></div>
+    </section>
+
+    <!-- CONFIRM CTA -->
+    <section class="section" id="section-confirm" style="display:none;">
+      <h3 class="section__title">Confirm</h3>
+      <div id="confirm-summary" class="card"></div>
+      <div class="sticky-footer">
+        <button id="btn-confirm" class="btn btn--primary btn--full">Book Now</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- AUTH MODAL -->
+  <div id="authModal" class="modal">
+    <div class="modal__scrim" onclick="closeAuth()"></div>
+    <div class="modal__panel">
+      <button class="modal__close" onclick="closeAuth()">×</button>
+      <h3 class="modal__title">Sign in to continue</h3>
+      <div class="form">
+        <label class="label">Email</label>
+        <input id="auth-email" class="input" type="email" />
+        <label class="label">Password</label>
+        <input id="auth-pass" class="input" type="password" />
+        <button id="btn-login" class="btn btn--primary">Sign In</button>
+      </div>
+      <div class="divider"></div>
+      <div class="muted" style="font-size:.9rem;">No account yet? Create it automatically at checkout (coming soon) or ask your pro to add you.</div>
+    </div>
+  </div>
+<!-- Stripe Fee Step (hidden until payment) -->
+<div id="stripe-fee-step" style="display:none; margin-top:16px;">
+  <div id="fee-line" style="font-weight:600; margin-bottom:8px;">
+    Service fee: <span id="fee-amount">$2.33</span>
+  </div>
+
+  <div id="card-element" style="padding:12px; border:1px solid #ddd; border-radius:8px;"></div>
+  <div id="card-errors" role="alert" style="color:#b00020; margin-top:8px;"></div>
+
+  <button id="pay-fee-btn" class="primary-btn" style="margin-top:12px;">Pay Fee & Continue</button>
+</div>
+
+  <!-- SUCCESS MODAL -->
+  <div id="successModal" class="modal">
+    <div class="modal__scrim" onclick="closeSuccess()"></div>
+    <div class="modal__panel">
+      <button class="modal__close" onclick="closeSuccess()">×</button>
+      <h3 class="modal__title">Appointment booked 🎉</h3>
+      <div id="success-details" class="form"></div>
+      <div class="row" style="margin-top:12px;">
+        <button class="btn btn--ghost" onclick="closeSuccess()">Done</button>
+        <button class="btn btn--primary" onclick="window.location.href='/client-dashboard'">Go to Client Dashboard</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <div id="page-error" style="display:none"></div>
+
+<img id="business-hero" style="display:none" />
+
+<section id="availability-section"></section>
+
+<style>
+  /* make text readable on dark cards */
+  .card, .card--select { color: #f5f7fa; }
+  .card__title, .service__name { color: #ffffff; }
+  .card__sub, .service__sub, .muted { color: #b5bdc9; }
+  /* if buttons look too dark, brighten them a bit */
+  .btn.btn--pill { color: #111; background: #e9eef5; }
+</style>
+
+<script src="/socket.io/socket.io.js"></script>
+ <script src="https://js.stripe.com/v3"></script>
+<script src="/qassets/js/booking-page.js" defer></script>
+
+
+</body>
+</html>

@@ -267,3 +267,5 @@ li:hover {
   .optionsets-grid { flex-direction: column; }
   .os-right { border-left: none; padding-left: 0; }
 }
+/* e.g., in admin.css */
+#datatype-list li.active { font-weight: 600; text-decoration: underline; }

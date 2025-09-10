@@ -4,7 +4,6 @@ const AuthUserSchema = new mongoose.Schema({
     firstName: { type: String, default: '' },
   lastName:  { type: String, default: '' },
   name:      { type: String, default: '' },   // optional display name
-  roles:     [String],
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   passwordHash: { type: String, required: true },
   roles: [{ type: String }], // we'll wire Option Sets later if you want

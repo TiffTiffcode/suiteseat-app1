@@ -1,0 +1,38 @@
+
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Drag & Drop Template – MVP</title>
+</head>
+<body>
+<div class="shell">
+  <!-- Canvas -->
+  <main class="canvas">
+    <div class="toolbar">
+      <button class="btn" id="btn-save">Save</button>
+      <button class="btn" id="btn-load">Load</button>
+      <button class="btn" id="btn-clear">Clear</button>
+    </div>
+    <div id="canvas" class="canvas-inner droppable" data-accept="*"></div>
+
+  </main>
+
+  <!-- Elements -->
+  <aside class="panel">
+    <h3>Elements</h3>
+    <div class="palette">
+      <div class="item" draggable="true" data-type="header">Header</div>
+      <div class="item" draggable="true" data-type="section">Section</div>
+      <div class="item" draggable="true" data-type="group2">Group (2 columns)</div>
+      <div class="item" draggable="true" data-type="image">Image</div>
+      <div class="item" draggable="true" data-type="text">Text</div>
+      
+    </div>
+  </aside>
+</div>
+
+
+</body>
+</html>

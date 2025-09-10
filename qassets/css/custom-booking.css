@@ -1,0 +1,1635 @@
+/* base */
+html, body { height:100%; margin:0; }
+
+/* Two-column layout: sidebar | canvas */
+.content-area{
+  display: grid;
+  grid-template-columns: 200px 1fr;  /* sidebar is 300px, canvas fills the rest */
+  min-height: 100vh;
+}
+
+
+/* Header Styling */
+.header {
+    background: linear-gradient(90deg, #EFB37C 0%, #C5F2DA 100%);
+    padding: 20px;
+    text-align: left;
+    font-size: 24px;
+    color: black;
+    box-shadow: 0px 4px 11.2px 0px rgba(0, 0, 0, 0.25);
+  }
+  
+  .business-header
+  {margin-bottom:20px;
+     svg {
+    transform: translateY(5px) translateX(5px); /* Move the SVG down by 10px */
+     
+  }
+  
+  }
+
+ .options-bar {
+  display: flex;
+  justify-content: flex-end; /* Align items to the right */
+  gap: 20px; /* Add space between Clients and Availability */
+  padding: 10px 20px;
+   flex:1
+}
+
+
+
+  .options-bar h3 {
+  font-weight: normal;
+  font-size: 16px;
+ margin: 0; /* Avoid extra spacing */}
+
+
+ 
+  .option {
+    padding: 10px 20px;
+    cursor: pointer;
+  font-weight: bold;
+  border-radius: 4px;
+  color: black;
+  transition: background-color 0.2s, color 0.2s;
+  }
+  
+  .row-orange {
+  display: flex;
+  background-color: white;
+  padding: 10px;
+  justify-content: space-around; /* or use space-between or center */
+  align-items: center;
+  border-radius: 6px;
+  color: white;
+}
+  .option:hover {
+    background-color: #ddd;
+    border-radius: 5px;
+  }
+  .option.active {
+  background-color: #EFB37C;
+  font-weight: bold;
+  border: 2px solid grey;
+}
+
+  .content-section {
+    margin-top: 20px;
+    padding: 20px;
+    background-color: grey;
+    border: 1px solid #ccc;
+  }
+  
+
+
+
+
+
+
+
+.business-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 15px;
+  background-color: #EFB37C;
+  border-bottom: 1px solid #ddd;
+  position: relative;
+}
+
+.spacer {
+  width: 100px; /* Adjust to match button width */
+}
+
+.section-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.add-business-button {
+  background-color:#EFB37C ;
+  color: #000000;
+  border:1px solid #FFFFFF;
+  padding:7px 14px;
+  border-radius:4px;
+  cursor:pointer;
+  
+}
+
+.button-center-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-top: 15px; /* optional for spacing */
+}
+
+
+  
+
+
+
+.border-border
+{border:1px solid black;
+  display: block; 
+}
+
+.border-start
+{display: flex;
+  width: 100%;
+  }
+
+.border
+{
+  flex: 1;                /* Makes each box take up equal width */
+  
+  text-align: center;
+  padding: 15px 0;
+  box-sizing: border-box; /* Ensures padding/border don’t overflow */
+  white-space: nowrap;    /* Prevents long text from wrapping */
+ }
+
+
+.business-option-bar {
+    display: flex;
+    justify-content: space-around;
+    padding: 10px;
+    font-weight: bold;
+    cursor: pointer;
+ text-align:center; }
+  
+  
+  
+  .content-section {
+    margin-top: 20px;
+    display:none;
+    padding: 20px;
+    background-color: #fafafa;
+    border: 1px solid #ccc;
+  }
+  /* screen-reader only label helper */
+
+
+
+                                        /* Sidebar */
+.sidebar{
+  border-right: 1px solid #e6e7eb;
+  padding: 16px;
+  background: #EFB37C;
+  box-sizing: border-box;
+  overflow: auto;        /* scroll if it gets tall */
+    z-index:2; 
+}
+
+
+/* Canvas column wrapper (optional) */
+.canvas-wrap{ padding: 12px; }
+
+body.preview #page .close,
+body.preview #page .close-sec,
+body.preview #page .section-rail,
+body.preview #page .rz,
+body.preview #page .rz-sec,
+body.preview #page .text-controls,
+body.preview #page .img-label,
+body.preview #page .add {
+  display: none !important;
+}
+
+
+
+
+
+
+
+
+/* --- edit mode switch --- */
+.preview-row{ display:flex; align-items:center; gap:10px; margin:12px 0 16px; }
+.switch{ position:relative; display:inline-block; width:42px; height:24px; }
+.switch input{ opacity:0; width:0; height:0; }
+.switch .slider{
+  position:absolute; inset:0; background:#d0d0d0; border-radius:999px;
+  transition:.2s;
+}
+.switch .slider::before{
+  content:""; position:absolute; height:18px; width:18px; left:3px; top:3px;
+  background:#fff; border-radius:50%; transition:.2s; box-shadow:0 1px 2px rgba(0,0,0,.2);
+}
+.switch input:checked + .slider{ background:#38bdf8; }
+.switch input:checked + .slider::before{ transform:translateX(18px); }
+.preview-label{ font-size:.95rem; color:#333; }
+
+/* --- PREVIEW MODE: hide editing chrome --- */
+body.preview .free-block .close,
+body.preview .free-block .add,
+body.preview .free-block .rz,              /* block resize handles */
+body.preview .section-free .rz,            /* section resize handles */
+body.preview .section-free .section-rail,  /* the vertical move bar */
+body.preview .section-free .section-handle,/* any extra section grips (if present) */
+body.preview .section-free .section-label, /* editable name pill */
+body.preview .text-controls {              /* + / - for text size */
+  display:none !important;
+}
+
+/* remove helper borders/shadows and dotted background in preview */
+body.preview .free-block,
+body.preview .section-block{ border-color:transparent !important; box-shadow:none !important; }
+body.preview #page{ background:#fff; }
+
+/* turn off move/resizing cursors in preview */
+body.preview *{ cursor:default !important; }
+
+/* Stack the tabs vertically */
+.tabs{
+  display: flex;
+  flex-direction: column;   /* ← vertical */
+  gap: 10px;
+  margin: 12px 0;
+}
+
+/* Make each tab a full-width chip */
+.tab{
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding:10px 12px; border:1px solid #ffffff55; 
+  background: #fff;
+  color: #222;
+  border: 1px solid #ffffff55;
+  cursor: pointer;
+}
+.tab:active {  background:#c4875f;     /* your brand orange */
+  color:#fff;
+  border-color:#c4875f;
+   transform: translateY(1px); }
+
+   /* stay solid after click */
+.tab.is-active{
+  background:#EFB37C;        /* your orange */
+  color:#fff;
+  border-color:#c4875f;
+}
+
+/* keep :active from changing colors (allow a tiny press effect only) */
+.tab:active{ transform: translateY(1px); }
+
+/* Make the buttons lay out text + icon */
+.tabs .tab,
+.item{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Drag indicator: three little bars */
+.tabs .tab::before,
+ .item::before{
+  content: "";
+  width: 16px;
+  height: 12px;
+  flex: 0 0 16px;
+  /* three horizontal lines using gradients */
+  background:
+    linear-gradient(currentColor, currentColor) 0 0 / 100% 2px no-repeat,
+    linear-gradient(currentColor, currentColor) 0 5px / 100% 2px no-repeat,
+    linear-gradient(currentColor, currentColor) 0 10px / 100% 2px no-repeat;
+  opacity: .7;
+}
+
+
+
+/* Keep tab text dark so the icon inherits a good color */
+.tabs .tab{ color:#222; }
+
+
+                                   /* page Area */
+.page{
+  min-height: 100vh;           /* span from top to bottom */
+  border: 1px solid #000;      /* thin black border */
+  background: #f7f7f7;
+  box-sizing: border-box;
+  /* optional padding so content isn’t tight to the border */
+  padding: 16px;
+    /* dotted pattern */
+  background-image:
+    radial-gradient(#d4d4d4 1px, transparent 1px),
+    radial-gradient(#d4d4d4 1px, transparent 1px);
+  background-position: 0 0, 6px 6px;  /* offset the layers for a nice spread */
+  background-size: 12px 12px;  
+    padding: 16px;
+    overflow: hidden;  /* prevents children from showing outside the border */
+  position: relative;
+  margin:20px;
+}
+/* Show a centered message ONLY when Page is empty */
+.page:empty{
+  display: grid;
+  place-items: center;               /* centers the pseudo-element */
+}
+
+.page:empty::before{
+  content: "Drag Elements Here";
+  color: #7a7a7a;
+  font-weight: 600;
+  letter-spacing: .2px;
+  padding: 10px 14px;
+  background: #ffffffaa;            /* subtle pill behind text */
+  border: 1px dashed #cfcfcf;
+}
+/* Optional: avoid a double line between sidebar and page */
+ .sidebar { border-right: 0; }
+    .page { border-left: 1px solid #000; } 
+
+
+    
+    /* highlight the page while an item is dragged over it */
+.page.is-over{
+  outline: 2px dashed #EFB37C;
+  outline-offset: -6px;            /* pulls the dashed line inside the border */
+}
+
+.dropped-block{
+  margin: 12px 0;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #e6e7eb;
+  font-weight: 600;
+}
+
+/* The orange preview bar shown during a Section drag */
+.drop-preview{
+  height: 30px;
+  width: 100%;
+  border: 2px dashed #EFB37C;
+  background: rgba(255,102,0,.06);
+  margin: 10px 0;
+  pointer-events: none;
+}
+
+/* Close button shared look */
+.close,
+.close-sec{
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 22px;
+  height: 22px;
+  background: #fff;
+  border: 1px solid #dcdcdc;
+  color: #333;
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  cursor: pointer;
+  z-index: 6;                 /* above resize handles */
+}
+
+/* If you prefer to only show on hover, uncomment these:
+.free-block .close { opacity: 0; transition: opacity .12s ease; }
+.free-block:hover .close { opacity: 1; }
+.section-free .close-sec { opacity: 0; transition: opacity .12s ease; }
+.section-free:hover .close-sec { opacity: 1; }
+*/
+
+/* Make sure elements can show the corner button outside the box */
+.free-block,
+.section-free {
+  overflow: visible;
+}
+/* inside your section renderer CSS */
+.section-content{
+  position: relative;   /* ← make it the containing block */
+  inset: 0;             /* or width/height:100% if you prefer */
+  padding: var(--section-padding, 16px);
+  box-sizing: border-box;
+}
+
+/* The real section block once dropped (clean container, no label) */
+/* Section block (you already have this) */
+/* Wrapper sits in normal flow; section fills width inside it */
+.section-wrap{
+  position: relative;
+  margin: 0;                /* moved margin from .section-block to the wrap */
+}
+/* Optional: remove the double 1px seam between stacked sections */
+.section-wrap + .section-wrap .section-block{ border-top-width: 0; }
+/* Your existing section styles, but remove its margin so we don't double-space */
+.section-block{
+  position: relative;
+  min-height: 120px;
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e6e7eb;
+  box-sizing: border-box;
+  /* margin: 12px 0;  <-- remove if you had it; the wrap has the margin now */
+}
+/* ---------- Section chrome row (name | controls | X) ---------- */
+/* Row above each free section: [Name] | [center controls] | [X] */
+.section-free .section-chrome{
+  position:absolute;
+  top:-34px;               /* sits just above the section */
+  left:0;                  /* no negative pull */
+  right:0;                 /* no negative pull */
+  height:28px;
+
+  display:grid;
+  grid-template-columns: auto 1fr auto;  /* left | center | right */
+  align-items:center;
+  padding:0 8px;
+  gap:8px;
+  pointer-events:auto;
+  z-index:6;
+}
+
+/* left: name pill — let it size to content, not full width */
+.section-free .section-chrome .section-name{
+  width:auto;                   /* override any old width:100% */
+  max-width:240px;              /* clamp so it never spans */
+  padding:6px 10px;
+  background:#fff;
+  border:1px solid #dcdcdc;
+  border-radius:8px;
+  color:#333;
+  font-size:14px; line-height:1;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  justify-self:start;
+}
+
+/* center: color + image — truly centered within the row */
+.section-free .section-chrome .section-middle{
+  grid-column:2;                /* middle column of the grid */
+  justify-self:center;
+  display:flex; align-items:center; gap:8px;
+}
+
+/* right: close button anchored to the right edge */
+.section-free .section-chrome .close-sec{
+  justify-self:end;
+}
+
+/* (optional) tidy sizes for the controls) */
+.section-free .sec-color{
+  width:28px; height:22px; padding:0;
+  border:1px solid #dcdcdc; border-radius:6px;
+}
+.section-free .sec-img-btn{
+  width:28px; height:22px; line-height:20px;
+  border:1px solid #dcdcdc; border-radius:6px;
+  background:#fff; cursor:pointer;
+}/* container that holds ▲ ▼; sits inside .section-middle */
+.section-free .sec-order{
+  display:inline-flex;
+  border:1px solid #dcdcdc;
+  border-radius:6px;
+  overflow:hidden;
+}
+
+.section-free .order-btn{
+  width:28px; height:22px;
+  line-height:20px;
+  background:#fff;
+  border:0;
+  cursor:pointer;
+}
+.section-free .order-btn + .order-btn{
+  border-left:1px solid #dcdcdc;
+}
+
+.section-free .order-btn:hover{ background:#f5f5f5; }
+.section-free .order-btn:active{ background:#eee; }
+
+
+.section-free .section-name:empty::before{ content:"Name"; color:#9a9a9a; }
+.section-free .section-name:focus{ outline:2px solid #EFB37C; outline-offset:2px; }
+/* Nudge control */
+.section-free .bg-nudge{
+  display:flex; align-items:center; gap:0;
+  border:1px solid #dcdcdc; border-radius:8px;
+  background:#fff; overflow:hidden; height:24px;
+}
+.section-free .bg-nudge button{
+  width:24px; height:24px; border:0; background:transparent;
+  cursor:pointer; line-height:1; display:flex; align-items:center; justify-content:center;
+}
+.section-free .bg-nudge button:hover{ background:#f3f3f3; }
+.section-free .bg-nudge .up::before   { content: '▲'; font-size:10px; }
+.section-free .bg-nudge .down::before { content: '▼'; font-size:10px; }
+
+/* Hide in preview mode */
+.preview .bg-nudge,
+.preview .sec-img-btn,
+.preview .sec-color { display:none !important; }
+
+/* Center controls wrapper – stays visually centered */
+.section-free .section-middle{
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Color chip */
+.section-free .sec-color{
+  width:28px; height:28px; padding:0; border:1px solid #dcdcdc;
+  border-radius:6px; cursor:pointer; background:#fff;
+}
+.section-free .section-middle .sec-color{
+  width:26px; height:26px; padding:0; border:1px solid #dcdcdc; border-radius:6px;
+  background:#fff;
+}
+.section-free .section-middle .sec-img-btn{
+  width:26px; height:26px; border:1px solid #dcdcdc; border-radius:6px;
+  background:#fff; font-size:14px; line-height:1;
+  display:inline-flex; align-items:center; justify-content:center;
+  cursor:pointer;
+}
+
+/* Right: close (X) — hang it slightly off the edge if you like */
+.section-free .close-sec{
+  justify-self:end;
+  margin-right:-10px;   /* optional: overhang the border a bit */
+  width:26px; height:26px;
+  border:1px solid #dcdcdc; border-radius:8px;
+  background:#fff;
+  cursor:pointer;
+}
+
+/* Preview mode already hides the chrome; keep these if you didn’t add them yet */
+.preview .section-chrome,
+.preview .section-rail,
+.preview .rz,
+.preview .close,
+.preview .close-sec{ display:none !important; }
+/* Image button (small icon button) */
+.section-free .sec-img-btn{
+  width:28px; height:28px;
+  border:1px solid #dcdcdc; border-radius:6px;
+  background:#fff; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  font-size:16px; line-height:1;
+}
+.section-free .sec-img-btn:hover{ filter:brightness(.96); }
+
+
+/* Close (right) – reuse your look */
+.section-free .close-sec{
+  width:28px; height:28px;
+  border:1px solid #dcdcdc; border-radius:6px;
+  background:#fff; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  font-size:16px; line-height:1;
+}
+
+/* Hide chrome in Preview mode */
+.preview .section-free .section-chrome,
+.preview .section-free .section-rail,
+.preview .section-free .rz { display:none !important; }
+/* Hide every builder control in preview */
+.preview .section-free .section-chrome,
+.preview .section-free .section-rail,
+.preview .section-free .rz,
+.preview .close-sec,                  /* section X */
+.preview .free-block .close {         /* block X */
+  display: none !important;
+}
+
+/* Top-left name square OUTSIDE the section border */
+.section-wrap .section-label{
+  position: absolute;
+  top: -14x;                    /* shift outside the section border */
+  left: -14px;
+  min-width: 28px; height: 28px; /* square until you type */
+  padding: 0 8px;                /* grows a bit horizontally as you type */
+  display: flex; align-items: center; justify-content: center;
+  background: #fff;
+  border: 1px solid #dcdcdc;
+  color: #555;
+  font-size: 12px; line-height: 1;
+  white-space: nowrap; max-width: 60%;
+  overflow: hidden; text-overflow: ellipsis;
+  cursor: grab;
+  z-index: 3;                    /* keep above the section contents */
+}
+
+/* Placeholder hint when empty */
+.section-wrap .section-label:empty::before{
+  content: "Name";
+  color: #9a9a9a;
+}
+
+/* Focus ring when editing */
+.section-wrap .section-label:focus{
+  outline: 2px solid #EFB37C;
+  outline-offset: 2px;
+}
+/* While dragging a section (nice lift effect) */
+.section-dragging{
+  opacity: .96;
+  box-shadow: 0 10px 24px rgba(0,0,0,.14);
+  pointer-events: none;              /* don’t catch mouse while floating */
+  z-index: 10;
+}
+
+/* Where the section would land while you drag */
+.section-placeholder{
+  border: 2px dashed #EFB37C;
+  margin: 12px 0;                    /* keep your normal gap */
+  height: 120px;                     /* replaced in JS to match the section */
+}
+.section-wrap .section-label:active{ cursor: grabbing; }
+/* A free-positioned section container (lives inside #page) */
+.section-free{
+  position: absolute;
+  overflow: visible;              /* allow the rail to stick out */
+}
+/* The actual card inside (reuse your .section-block styles) */
+.section-free .section-block{
+  width: 100%;
+  height: 100%;
+}
+
+/* Rail sits just OUTSIDE the left border */
+.section-free .section-rail{
+  position: absolute;
+  left: -12px;                    /* outside */
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 60%;
+  background: #111;
+  box-shadow: 0 0 0 2px #fff;     /* small white halo */
+  cursor: grab;
+  z-index: 4;
+}
+.section-free .section-rail:active{ cursor: grabbing; }
+/* Name pill stays just outside the top-left of the box */
+.section-free .section-label{
+  position:absolute;
+  top:-30px; left:-1px;
+  min-width:28px; height:20px; padding:0 8px;
+  display:flex; align-items:center; justify-content:center;
+  background:#fff; border:1px solid #dcdcdc;
+  color:#555; font-size:12px; line-height:1; white-space:nowrap;
+  cursor:grab; z-index:3;
+}
+/* Drag handle (burger) for free sections */
+.section-free .section-handle{
+  position:absolute;
+  top:-18px;                 /* sits just above the box */
+  left:-54px;                /* to the left of the name pill */
+  width:34px; height:34px;
+  border:1px solid #dcdcdc;
+  background:#fff;
+  box-shadow:0 2px 8px rgba(0,0,0,.08);
+  display:flex; align-items:center; justify-content:center;
+  cursor:grab; z-index:4;
+}
+.section-free .section-handle:active{ cursor:grabbing; }
+
+/* three bars */
+
+
+
+/* The card; add top padding so the chrome doesn't cover content */
+.section-free .section-block{
+  position: relative;
+  width: 100%; height: 100%;
+
+}
+
+/* Small “grip” handle (6 dots) — drag from here */
+.section-free .section-handle{
+  width:24px; height:24px;
+  border:1px solid #dcdcdc; 
+  background:#fff;
+  display:flex; align-items:center; justify-content:center;
+  cursor:grab;
+}
+.section-free .section-handle:active{ cursor:grabbing; }
+
+/* draw six dots via box-shadow */
+.section-free .section-handle::before{
+  content:""; width:3px; height:3px; background:#777;
+  box-shadow:
+    0   0   0 #777, 0   6px 0 #777, 0  12px 0 #777,
+    6px 0   0 #777, 6px 6px 0 #777, 6px 12px 0 #777;
+}
+
+/* Editable label styled like a small input */
+.section-free .section-label{
+  min-width:140px; max-width:60%;
+  padding:6px 10px;
+  background:#fff; border:1px solid #dcdcdc;
+  color:#333; font-size:14px; line-height:1;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  cursor:text;
+}
+.section-free .section-label:empty::before{ content:"Name"; color:#9a9a9a; }
+.section-free .section-label:focus{ outline:2px solid #EFB37C; outline-offset:2px; }
+
+.section-free .section-label:active{ cursor:grabbing; }
+.section-free .section-label:empty::before{ content:"Name"; color:#9a9a9a; }
+.section-free .section-label:focus{ outline:2px solid #EFB37C; outline-offset:2px; }
+
+/* Corner resize handles (same look as group/image) */
+.section-free .rz-sec{
+  position:absolute; width:12px; height:12px;
+  background:#EFB37C;  box-shadow:0 0 0 2px #fff;
+  opacity:0; transition:opacity .12s ease; z-index:2;
+}
+.section-free:hover .rz-sec{ opacity:1; }
+.section-free .rz-sec.nw{ left:-6px;  top:-6px;    cursor:nwse-resize; }
+.section-free .rz-sec.ne{ right:-6px; top:-6px;    cursor:nesw-resize; }
+.section-free .rz-sec.sw{ left:-6px;  bottom:-6px; cursor:nesw-resize; }
+.section-free .rz-sec.se{ right:-6px; bottom:-6px; cursor:nwse-resize; }
+
+/* GROUP/IMAGE corners */
+.free-block.group .rz,
+.free-block.image .rz{
+  position:absolute; width:12px; height:12px;
+  background:#EFB37C;  box-shadow:0 0 0 2px #fff;
+  opacity:0; transition:opacity .12s ease; z-index:3;   /* slightly above */
+}
+.free-block.group:hover .rz,
+.free-block.image:hover .rz{ opacity:1; }
+
+/* Top-left name square */
+.section-block .section-label{
+  position:absolute;
+  top:8px; left:8px;
+  min-width:28px; height:28px;          /* square by default */
+  padding:0 8px;                         /* grows a bit as you type */
+  display:flex; align-items:center; justify-content:center;
+  background:#fff;
+  border:1px solid #dcdcdc;
+  color:#555;
+  font-size:12px; line-height:1;
+  white-space:nowrap; max-width:60%;
+  overflow:hidden; text-overflow:ellipsis;
+  cursor:text;
+  z-index:2;
+}
+
+/* “hint” when empty */
+.section-block .section-label:empty::before{
+  content:"Name";
+  color:#9a9a9a;
+}
+
+/* focus state */
+.section-block .section-label:focus{
+  outline:2px solid #EFB37C;
+  outline-offset:2px;
+}
+
+/* The little corner handle (bottom-right) */
+.section-block .resizer{
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  right: 8px;
+  bottom: 8px;
+  background: #EFB37C;
+  box-shadow: 0 0 0 2px #fff;    /* small white ring for contrast */
+  cursor: ns-resize;             /* vertical resize cursor */
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+
+/* Show the handle on hover */
+.section-block:hover .resizer{ opacity: 1; }
+
+
+/* A freely placed block dropped inside a section */
+.free-block{
+  position: absolute;   /* placed by JS at drop X/Y */
+  min-width: 0px;
+  min-height: 0px;
+  background: #fff;
+  border: 1px solid #e6e7eb;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  padding: 10px 12px;
+  box-sizing: border-box;
+  cursor: move;
+}
+/* Group block look (already absolute via .free-block) */
+.free-block.group{
+  min-width: 0;
+  min-height: 0;
+  background:#fff;
+  border:1px solid #e6e7eb;
+  outline: 1px solid transparent;
+  transition: outline-color .12s ease;
+   position: absolute; 
+  box-shadow:0 1px 2px rgba(0,0,0,.04);
+  overflow: visible;   /* lets corner handles stay clickable when tiny */
+}
+.free-block.group.drop-target {
+  outline-color: #EFB37C;
+}
+
+/* Corner resize handles */
+.free-block.group .rz{
+  position:absolute;
+  width:12px; height:12px;
+  background:#EFB37C;
+  box-shadow:0 0 0 2px #fff;
+  opacity:0; transition:opacity .12s ease;
+  z-index:2;
+}
+.free-block.group:hover .rz{ opacity:1; }
+
+/* positions + cursors */
+.free-block.group .rz.nw{ left:-6px;  top:-6px;    cursor:nwse-resize; }
+.free-block.group .rz.ne{ right:-6px; top:-6px;    cursor:nesw-resize; }
+.free-block.group .rz.sw{ left:-6px;  bottom:-6px; cursor:nesw-resize; }
+.free-block.group .rz.se{ right:-6px; bottom:-6px; cursor:nwse-resize; }
+
+
+/* quick inner looks for types (optional) */
+.free-block.text [contenteditable]{ outline: none; min-width: 120px; min-height: 20px; display:block; }
+.free-block.image{ width: 260px; height: 160px; display:flex; align-items:center; justify-content:center; background:#fafafa; border:1px dashed #dcdcdc; }
+.free-block.button button{ background:#EFB37C; color:#fff; border:0;  padding:8px 12px; cursor:pointer; }
+.free-block{ cursor: move; }
+.free-block.moving{
+  opacity: .98;
+  box-shadow: 0 10px 24px rgba(0,0,0,.15);
+  z-index: 2;
+}
+
+                        /*/////////// make image resizable //////////////*/
+
+
+                        /* Image block look + make the img fill the box */
+/* Image block container */
+.free-block.image{
+  width: 260px;
+  height: 160px;
+  background:#fafafa;
+  border:1px dashed #dcdcdc;
+  display:flex; align-items:center; justify-content:center;
+  position:absolute;             /* already true via .free-block; safe to repeat */
+  overflow: visible;             /* show handles and top buttons */
+}
+
+/* The bitmap fills the box when present */
+.free-block.image img{
+  width:100%; height:100%;
+  object-fit:cover;
+  pointer-events:none;           /* don't intercept clicks intended for handles */
+  display:none;                  /* hidden until we have an image */
+}
+
+/* Show the image when selected */
+.free-block.image.has-img img{ display:block; }
+
+/* Centered label "Image" (hidden once an image is loaded) */
+.free-block.image .img-label{
+  position:absolute;
+  inset:0;
+  display:flex; align-items:center; justify-content:center;
+  color:#9a9a9a;
+  font-weight:500;
+  pointer-events:none;
+}
+.free-block.image.has-img .img-label{ display:none; }
+
+/* Top-center + button (opens file picker) */
+.free-block.image .add{
+  position:absolute;
+  top:-10px;
+  left:50%;
+  transform:translateX(-50%);
+  width:22px; height:22px;
+  background:#fff;
+  border:1px solid #dcdcdc;
+  color:#333;
+  line-height:1;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.08);
+  cursor:pointer;
+  z-index:6;                       /* above handles */
+}
+
+/* Hide image handles by default; show on hover */
+.free-block.image .rz{ opacity:0; transition:opacity .12s ease; }
+.free-block.image:hover .rz,
+.free-block.image.resizing .rz{ opacity:1; }
+
+/* Corner handle positions (you likely already have these) */
+.free-block.image .rz.nw{ left:-6px;  top:-6px;    cursor:nwse-resize; }
+.free-block.image .rz.ne{ right:-6px; top:-6px;    cursor:nesw-resize; }
+.free-block.image .rz.sw{ left:-6px;  bottom:-6px; cursor:nesw-resize; }
+.free-block.image .rz.se{ right:-6px; bottom:-6px; cursor:nwse-resize; }
+
+
+/* Corner resize handles for images (share styles with group) */
+.free-block.image .rz{
+  position:absolute; width:12px; height:12px;
+  background:#EFB37C; box-shadow:0 0 0 2px #fff;
+  opacity:0; transition:opacity .12s ease; z-index:2;
+}
+.free-block.image:hover .rz{ opacity:1; }
+.free-block.image .rz.nw{ left:-6px;  top:-6px;    cursor:nwse-resize; }
+.free-block.image .rz.ne{ right:-6px; top:-6px;    cursor:nesw-resize; }
+.free-block.image .rz.sw{ left:-6px;  bottom:-6px; cursor:nesw-resize; }
+.free-block.image .rz.se{ right:-6px; bottom:-6px; cursor:nwse-resize; }
+
+/* When an image has been selected, remove the frame entirely */
+.free-block.image.has-img{
+  border: none;
+  background: transparent;
+  padding: 0;           /* overrides .free-block padding */
+  box-shadow: none;
+}
+
+
+/* (You already hide the "Image" label on has-img; keep it) */
+.free-block.image.has-img .img-label{ display: none; }
+
+/* ///////////////End of resizing image ////////////*/
+
+
+                    /*/////////// Text Block//////////////*/
+
+                    /* Default: no border for filled text blocks */
+.free-block.text{
+  border: 1px solid transparent;
+  background: #fff;
+}
+
+/* When empty, show a dashed “input-y” border */
+.free-block.text[data-empty="true"]{
+  border-color: #dcdcdc;
+  border-style: dashed;
+}
+
+/* Placeholder label when empty (shows inside the editable div) */
+.free-block.text[data-empty="true"] .t::before{
+  content: attr(data-ph);     /* reads the text from data-ph */
+  color: #9a9a9a;
+  pointer-events: none;
+}
+
+/* Text block defaults: show dashed border only when EMPTY */
+.free-block.text[data-empty="true"]{
+  border: 1px dashed #dcdcdc !important;
+  box-shadow: none !important;
+}
+
+/* When it has content: remove EVERYTHING (no border, no shadow) */
+.free-block.text:not([data-empty="true"]){
+  border: none !important;
+  box-shadow: none !important;
+  outline: none;
+}
+/* Default: block is draggable */
+.free-block.text { cursor: move; }
+
+/* When actually editing: show text cursor only over the editor */
+.free-block.text .t[contenteditable="true"] { cursor: text; }
+
+/* Optional: subtle ring while editing */
+.free-block.text.editing{
+  border: 1px solid #FF6600 !important;
+  box-shadow: 0 0 0 2px rgba(255,102,0,.15);
+}
+
+/* Keep “border only when empty” behavior */
+.free-block.text[data-empty="true"]{
+  border: 1px dashed #dcdcdc !important;
+  box-shadow: none !important;
+}
+.free-block.text:not([data-empty="true"]){
+  border: none !important;
+  box-shadow: none !important;
+  outline: none;
+}
+
+/* Placeholder text (uses data-ph) */
+.free-block.text[data-empty="true"] .t::before{
+  content: attr(data-ph);
+  color: #9a9a9a;
+  pointer-events: none;
+}
+
+/* Hide the gray placeholder whenever the text block is in edit mode */
+.free-block.text.editing .t::before,
+.free-block.text .t[contenteditable="true"]::before{
+  content: none;
+}
+
+/* Text blocks should never have a filled background */
+.free-block.text,
+.free-block.text[data-empty="true"],
+.free-block.text.editing{
+  background: transparent !important;
+  border-color: transparent;    /* we'll show dashed border only when empty below */
+  box-shadow: none !important;
+}
+
+/* Keep the dashed border ONLY when empty (no fill) */
+.free-block.text[data-empty="true"]{
+  border: 1px dashed #dcdcdc !important;
+}
+
+/* Image block */
+.free-block.image{
+  width:260px; height:160px;
+  background:#fafafa;
+  border:1px dashed #dcdcdc;
+  
+  position:absolute;            /* already set by .free-block */
+  display:flex; align-items:center; justify-content:center;
+}
+.free-block.image img{
+  width:100%; height:100%; object-fit:cover;
+}
+
+/* Corner handles */
+.free-block.image .rz{
+  position:absolute; width:12px; height:12px;
+  background:#FF6600;  box-shadow:0 0 0 2px #fff;
+  opacity:0; transition:opacity .12s ease; z-index:2;
+}
+.free-block.image:hover .rz{ opacity:1; }
+.free-block.image .rz.nw{ left:-6px;  top:-6px;    cursor:nwse-resize; }
+.free-block.image .rz.ne{ right:-6px; top:-6px;    cursor:nesw-resize; }
+.free-block.image .rz.sw{ left:-6px;  bottom:-6px; cursor:nesw-resize; }
+.free-block.image .rz.se{ right:-6px; bottom:-6px; cursor:nwse-resize; }
+
+/* Make sure the image box can show handles that stick out a bit */
+.free-block.image{
+  position: absolute;       /* already true via .free-block, safe to repeat */
+  overflow: visible;        /* IMPORTANT: don't clip the -6px handles */
+}
+
+/* Let clicks go through the bitmap so you can hit the handles */
+.free-block.image img{ pointer-events: none; }
+
+
+/* After verifying, you can replace the line above with:
+   .free-block.image:hover .rz{ opacity: 1; } */
+.free-block.image{ cursor: default; }
+.free-block.image .rz.nw{ cursor: nwse-resize; }
+.free-block.image .rz.ne{ cursor: nesw-resize; }
+.free-block.image .rz.sw{ cursor: nesw-resize; }
+.free-block.image .rz.se{ cursor: nwse-resize; }
+
+/* replace the debug line */
+.free-block.image .rz{ opacity: 0; transition: opacity .12s ease; }
+.free-block.image:hover .rz,
+.free-block.image.resizing .rz{ opacity: 1; }
+
+/* Text size control pill */
+.free-block.text .text-controls{
+  position:absolute; right:-6px; top:-28px;
+  display:flex; align-items:center; gap:6px;
+  background:#fff; border:1px solid #e6e7eb; 
+  padding:2px 4px; box-shadow:0 2px 8px rgba(0,0,0,.08);
+  opacity:0; transform:translateY(-2px);
+  transition:opacity .12s ease, transform .12s ease;
+  z-index:4;
+}
+/* show when hovering or editing */
+.free-block.text:hover .text-controls,
+.free-block.text.editing .text-controls{ opacity:1; transform:none; }
+
+.free-block.text .ts{
+  border:0; padding:2px 6px; 
+  background:#EFB37C; color:#fff; font-weight:600; cursor:pointer;
+}
+.free-block.text .tsvalue{
+  min-width:22px; text-align:center; font-size:12px; color:#555;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+/*New Elements */
+/* Hide all on-canvas toolbar buttons except Duplicate (⧉) & Delete (✕) */
+.el-toolbar .el-tool-btn[title="Bring to front"],
+.el-toolbar .el-tool-btn[title="Bring forward"],
+.el-toolbar .el-tool-btn[title="Send backward"],
+.el-toolbar .el-tool-btn[title="Send to back"],
+.el-toolbar .el-tool-btn[title="Upload image"],
+.el-toolbar .el-tool-btn[title="Edit text"],
+.el-toolbar .el-tool-btn[title="Send parent section to back"],
+.el-toolbar .el-tool-btn[title="Bring parent section to front"]{
+  display: none !important;
+}
+
+/* Same for the Inspector buttons */
+#inspector .inspector-btn[title="Bring to front"],
+#inspector .inspector-btn[title="Bring forward"],
+#inspector .inspector-btn[title="Send backward"],
+#inspector .inspector-btn[title="Send to back"],
+#inspector .inspector-btn[title="Upload image"],
+#inspector .inspector-btn[title="Edit text"],
+#inspector .inspector-btn[title="Send parent section to back"],
+#inspector .inspector-btn[title="Bring parent section to front"]{
+  display: none !important;
+}
+
+
+
+
+/*Inspector */
+
+/* Safety: let grid children shrink if sidebar is narrow */
+#inspector .inspector-actions > * { min-width: 0; }
+#inspector .inspector-actions { margin-top: 12px; border-top: 1px solid #eee; padding-top: 10px; }
+#inspector .inspector-actions-title { font-weight: 600; margin-bottom: 4px; }
+
+/* Auto-fit as many buttons as we have, wrap if needed */
+#inspector .inspector-row{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+  gap: 8px;
+  min-width: 0; /* let the grid shrink inside the sidebar */
+}
+
+/* Inspector actions */
+#inspector .inspector-actions { 
+  margin-top:12px; 
+  border-top:1px solid #eee; 
+  padding-top:10px; 
+}
+/* Inspector horizontal toolbar */
+#inspector .inspector-toolbar{
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;           /* stay on one line */
+  overflow-x: auto;            /* scroll if the sidebar is narrow */
+  -webkit-overflow-scrolling: touch;
+}
+
+#inspector .inspector-toolbar .inspector-btn{
+  flex: 0 0 36px;              /* fixed button width */
+  min-width: 36px;
+  height: 32px;
+  padding: 0;
+  box-sizing: border-box;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+#inspector .inspector-toolbar .inspector-btn:hover{
+  background:#f3f4f6;
+}
+
+#inspector .inspector-zrow,
+#inspector .inspector-bottomrow { display: contents !important; }
+
+
+/* Inspector panel look (you already have this) */
+#inspector .inspector-actions {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+#inspector .inspector-actions-title { font-weight: 600; margin-bottom: 8px; }
+
+/* Vertical stack: one button per line */
+#inspector .inspector-stack{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Full-width buttons in the stack */
+#inspector .inspector-stack .inspector-btn{
+  width: 100%;
+  height: 32px;
+  padding: 0;
+  box-sizing: border-box;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+#inspector .inspector-stack .inspector-btn:hover{ background:#f3f4f6; }
+
+/* If old rows still exist, hide them to avoid layout conflicts */
+#inspector .inspector-zrow,
+#inspector .inspector-bottomrow{ display: none !important; }
+
+/* Keep ON-CANVAS toolbars horizontal */
+.el > .el-toolbar{ display:flex; flex-direction:row; gap:6px; }
+
+
+/* Inspector panel */
+.inspector{
+  position: fixed; right: 16px; top: 80px;
+  width: 260px; max-height: calc(100vh - 96px);
+  overflow:auto; padding:12px 12px 16px;
+  background:#fff; border:1px solid #ddd; border-radius:12px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.08); z-index: 9999;
+  font: 13px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+.inspector h3{ margin:0 0 10px; font-size:14px; font-weight:600; }
+.inspector .empty{ color:#777; }
+.inspector .field{ margin-bottom:12px; }
+.inspector .field label{ display:block; margin-bottom:6px; font-weight:600; }
+.inspector .field input[type="number"]{ width:100%; box-sizing:border-box; }
+.inspector .row{ display:grid; grid-template-columns: 1fr 80px; gap:8px; align-items:center; }
+#inspector { min-height: 150px; padding: 12px; border-left: 1px solid #e5e7eb; }
+/* Inspector panel look in the sidebar */
+#inspector.inspector{
+  position: sticky;             /* stays put while sidebar scrolls */
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.04);
+  padding: 14px;
+  margin-bottom: 12px;          /* space above “Elements” */
+}
+
+/* Nice inputs */
+#inspector .field{ margin: 10px 0; }
+#inspector .field > label{
+  display:block;
+  font-weight:600;
+  margin-bottom:6px;
+}
+#inspector input[type="text"],
+#inspector input[type="number"],
+#inspector input[type="color"],
+#inspector select,
+#inspector textarea{
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* — Inspector actions layout — */
+#inspector .inspector-actions{
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+/* 2 across for duplicate/delete */
+#inspector .inspector-bottomrow{
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  min-width: 0;
+}
+
+.canvas {
+  position: relative;
+  min-height: 700px;
+  background: #f6f7fb;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* Base element */
+.el {
+  position: absolute;
+  box-sizing: border-box;
+  user-select: none;
+  overflow: visible; 
+}
+
+/* Group look (tweak later) */
+.el.group {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.05);
+}
+
+/* Selected ring */
+.el.selected {
+  outline: 2px solid #3b82f6; /* blue */
+  outline-offset: 0;
+}
+
+/* Resize handles (4 corners for now) */
+.handle {
+  position: absolute;
+  width: 10px; height: 10px;
+  background: #3b82f6;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+.handle.nw { top: -6px; left: -6px; cursor: nwse-resize; }
+.handle.ne { top: -6px; right:-6px; cursor: nesw-resize; }
+.handle.sw { bottom:-6px; left: -6px; cursor: nesw-resize; }
+.handle.se { bottom:-6px; right:-6px; cursor: nwse-resize; }
+
+
+/* corner resize handles (hidden until hover) */
+.el .resize-handle{
+  position:absolute;
+  width:10px; height:10px;
+  border:2px solid #fff;
+  background:#3b82f6;
+  border-radius:50%;
+  box-sizing:border-box;
+  opacity:0;
+  pointer-events:none;          /* don’t block the mouse unless hovered */
+  transition:opacity .1s;
+}
+.el:hover .resize-handle{
+  opacity:1;
+  pointer-events:auto;
+}
+
+/* 4 corners */
+.resize-handle.nw{ top:-6px; left:-6px;  cursor:nwse-resize; }
+.resize-handle.ne{ top:-6px; right:-6px; cursor:nesw-resize; }
+.resize-handle.sw{ bottom:-6px; left:-6px;  cursor:nesw-resize; }
+.resize-handle.se{ bottom:-6px; right:-6px; cursor:nwse-resize; }
+
+
+/* Drag cursor when hovering element body */
+.el .drag-surface { position:absolute; inset:0; cursor: move; }
+
+
+/* add 4 point arrow on elements  */
+
+.drag-handle:active { cursor: grabbing; }
+
+
+/* Show on hover, when selected, or while the handle itself is hovered */
+.el:hover > .drag-handle,
+.el.selected > .drag-handle,
+.el > .drag-handle:hover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) scale(1);
+}
+
+/* add X to elements to delete them  */
+/* show selection outline (shared) */
+.el.selected { outline: 2px solid #3b82f6; outline-offset: 0; }
+
+/* round delete button, outside the top-right corner */
+.delete-btn{
+  position:absolute;
+  top:-12px;              /* outside */
+  right:-12px;            /* outside */
+  width:24px; height:24px;
+  border-radius:999px;
+  background:#ef4444;     /* red */
+  color:#fff;
+  font-weight:700;
+  line-height:24px;
+  text-align:center;
+  cursor:pointer;
+  box-shadow:0 1px 2px rgba(0,0,0,.25);
+  border:none;
+  opacity:0;              /* only on hover */
+  transition:opacity .12s ease;
+  z-index:10;
+}
+.el:hover .delete-btn{ opacity:1; }
+
+/* If your #page has overflow:hidden, the button near the canvas edge may clip.
+   To keep it always visible, change top/right to small positive values. */
+
+   /* tool Bar
+ /* --- Element toolbar: hidden by default, show on hover only --- */
+.el { overflow: visible; }  /* let the toolbar hang outside the element */
+
+.el > .el-toolbar {
+  position: absolute;
+  top: -36px;
+  right: 6px;
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: rgba(255,255,255,.95);
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.12);
+  opacity: 0;                 /* hidden by default */
+  pointer-events: none;       /* don't catch clicks while hidden */
+  transform: translateY(-4px);
+  transition: opacity .12s ease, transform .12s ease;
+  z-index: 999;
+}
+/* ON-CANVAS TOOLBAR — always a single horizontal row */
+.el > .el-toolbar{
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 6px;
+}
+/* INSPECTOR — stack buttons vertically */
+#inspector .inspector-actions{
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Make the two groups vertical too */
+#inspector .inspector-zrow,
+#inspector .inspector-bottomrow{
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  /* cancel any grid rules that were applied earlier */
+  grid-template-columns: unset !important;
+  grid-auto-flow: unset !important;
+}
+
+/* show ONLY when the element is hovered, or while the pointer is on the toolbar */
+.el:hover > .el-toolbar,
+.el > .el-toolbar:hover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+/* flip to inside only for THAT element (not descendants) */
+.el.toolbar-inside > .el-toolbar {
+  top: 6px;
+  right: 6px;
+}
+
+/* Keep toolbar visible for the selected element */
+.el.selected > .el-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+ /* Undo and Redo buttons  */
+ /* Canvas toolbar (inside the page, top-left) */
+/* Fixed toolbar: always visible, outside the canvas */
+#canvas-toolbar{
+  position: fixed;          /* was absolute */
+  top: 12px;                /* adjust if it hits your header */
+  right: 12px;              /* move to a safe corner */
+  display:flex; gap:8px;
+  padding:6px;
+  background:rgba(255,255,255,.95);
+  border:1px solid #e5e7eb;
+  border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,0,0,.12);
+  z-index: 3000;            /* above everything */
+  pointer-events: auto;
+}
+.canvas-btn{
+  min-width:28px; height:28px;
+  padding:0 10px;
+  border:none; border-radius:6px;
+  background:#f3f4f6; cursor:pointer;
+  font-size:12px; line-height:28px;
+}
+.canvas-btn:hover{ background:#e5e7eb; }
+.canvas-btn:disabled{ opacity:.45; cursor:not-allowed; }
+
+
+/*Image Element  */
+.el.image { overflow: visible; position:absolute; box-sizing:border-box; }
+.el.image img { display:block; width:100%; height:100%; object-fit:cover; }
+.image-inner { position:absolute; inset:0; overflow:hidden; border-radius:inherit; }
+
+#add-image-fab{
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 0;
+  background: #0b66ff;
+  color: #fff;
+  font-size: 26px;
+  line-height: 44px;
+  text-align: center;
+  box-shadow: 0 8px 20px rgba(0,0,0,.15);
+  cursor: pointer;
+  z-index: 9999; /* above canvas */
+}
+#add-image-fab:hover{ transform: translateY(-1px); }
+
+/* Text */
+.el.text .text-content[contenteditable="true"] {
+  outline: 2px dashed #93c5fd;
+  outline-offset: 2px;
+}
+.el.text .text-content.placeholder {
+  color: #6b7280;   /* gray-500 */
+  font-style: italic;
+}
+
+/* Section */
+/* Section label input: hidden until hover/selected */
+.el.section-el > .section-tag {
+  position: absolute;
+  top: -30px;           /* sits above the section */
+  left: 8px;
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px 6px;
+  background: rgba(255,255,255,.98);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.12);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+  z-index: 2147483647;  /* always on top */
+}
+/* flip inside if section is near the canvas top */
+.el.section-el.toolbar-inside > .section-tag {
+  top: 6px;          /* inside the box instead of above it */
+}
+
+/* make it visible on hover/selected/focus */
+.el.section-el:hover > .section-tag,
+.el.section-el.selected > .section-tag,
+.el.section-el > .section-tag:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+/* optional: keep the whole section on top while interacting */
+.el.section-el.hover-raise,
+.el.section-el:hover {
+  z-index: 2147483647 !important;
+}
+/* input styling */
+.el.section-el > .section-tag input {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  outline: none;
+}
+.el.section-el > .section-tag input:focus {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 2px rgba(147,197,253,.35);
+}
+/* Float hovered/active section above all siblings */
+.el.section-el.hover-raise,
+.el.section-el:hover {
+  z-index: 2147483647 !important; /* very high, overrides inline zIndex */
+}
+
+/* Make sure the tag itself is on top too */
+.el.section-el > .section-tag {
+  z-index: 2147483647;
+}
+
+.el.section-el  { position: absolute; box-sizing: border-box;}
+.el.section, .el.group, .el.text, .el.image { box-sizing: border-box; }
+.el.section { width:auto; }
+
+/* Free-positioned Section inside the builder */
+#page .el.section-el {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: visible;        /* keep handles clickable when tiny */
+  /* no width/height here – JS sets them inline */
+}
+
+/* Make sure box-sizing is consistent for all */
+.el.section-el, .el.group, .el.text, .el.image { box-sizing: border-box; }
+
+/* Neutralize legacy section rules INSIDE the builder only */
+#page .section,
+#page .section-wrap,
+#page .section-free,
+#page .section-block {
+  width: auto !important;
+  min-width: 0 !important;
+  left: auto !important;
+  right: auto !important;
+}
+
+
+/*  */
+
+/*  */
+
+/*  */
+
+
+/*  */

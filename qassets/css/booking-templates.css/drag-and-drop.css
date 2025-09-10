@@ -1,0 +1,175 @@
+:root{
+  /* Brand */
+  --brand-peach:#efb37c;
+  --brand-orange:#FF6600;
+
+  /* Light theme */
+  --bg:#ffffff;           /* page background */
+  --paper:#ffffff;        /* cards / blocks */
+  --ink:#0b0c0e;          /* primary text */
+  --muted:#5b6573;        /* secondary text */
+  --line:#e6e7eb;         /* light borders */
+  --radius:14px;
+}
+
+html,body{
+  margin:0;height:100%;
+  background:var(--bg);color:var(--ink);
+  font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;
+}
+
+.shell{display:grid;grid-template-columns:1fr 300px;min-height:100%}
+
+/* Canvas */
+.canvas{ padding:18px; border-right:1px solid var(--line) }
+.toolbar{ display:flex; gap:8px; margin-bottom:12px }
+
+/* Buttons — brand */
+.btn{
+  border:0;
+  background:var(--brand-orange);
+  color:#fff;
+  padding:8px 12px;
+  border-radius:10px;
+  cursor:pointer;
+  box-shadow:0 1px 0 rgba(0,0,0,.06);
+}
+.btn:hover{ filter:brightness(0.95) }
+.btn:active{ transform:translateY(1px) }
+
+/* Optional “subtle” button variant if you want it later */
+.btn.peach{ background:var(--brand-peach); color:#432 }
+.btn.ghost{
+  background:#fff; color:var(--brand-orange); border:1px solid var(--brand-orange);
+}
+
+.canvas-inner{ display:flex; flex-direction:column; gap:12px; min-height:60vh }
+
+/* Elements panel — brand gradient */
+.panel{
+  position:sticky; top:0;
+  background:linear-gradient(180deg,var(--brand-peach),var(--brand-orange));
+  color:#fff;
+  border-left:1px solid var(--line);
+  padding:14px; min-height:100vh;
+}
+.panel h3{ margin:6px 0 10px; font-size:1rem; color:#fff }
+.palette{ display:grid; gap:10px }
+
+/* Items — white chips on brand sidebar */
+.item{
+  background:#fff;
+  color:var(--ink);
+  border:1px solid #ffffff33;
+  padding:10px; border-radius:12px;
+  cursor:grab; user-select:none;
+  box-shadow:0 2px 6px rgba(0,0,0,.06);
+}
+.item:active{ cursor:grabbing }
+
+/* Nodes */
+.node{
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  background:var(--paper);
+  position:relative;
+}
+.node.section{ padding:14px; display:flex; flex-direction:column; gap:10px }
+.node.section .title{ font-size:.95rem; opacity:.9 }
+
+.row{ display:grid; gap:10px }
+.row.cols-2{ grid-template-columns:repeat(2, minmax(0,1fr)) }
+
+.group{
+  border:1px dashed var(--line);
+  border-radius:12px; padding:10px; min-height:80px;
+  background:#fff;
+}
+
+/* Blocks now light */
+.block{
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px;
+  background:#fff;
+}
+.block.header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px; border:1px solid var(--line); background:#fff;
+}
+.brand{ display:flex; gap:10px; align-items:center }
+.burger{
+  width:38px; height:38px; border:1px solid var(--line);
+  border-radius:10px; display:inline-flex; align-items:center; justify-content:center;
+  background:#fff;
+}
+.auth{ display:flex; gap:8px }
+.auth .btn{ padding:6px 10px }
+
+/* Text & Images */
+.block.text [contenteditable]{ outline:none; min-height:20px }
+.block.image .ph{
+  display:flex; align-items:center; justify-content:center;
+  min-height:140px; background:#fafafa;
+  border:1px dashed var(--line); border-radius:10px; cursor:pointer;
+}
+.block.image img{ max-width:100%; display:block; border-radius:10px }
+
+/* remove pin */
+.x{
+  position:absolute; top:6px; right:6px; width:26px; height:26px;
+  border-radius:999px; border:1px solid #0002; background:#fff; color:#333;
+  display:flex; align-items:center; justify-content:center; cursor:pointer;
+}
+.x:hover{ filter:brightness(0.95) }
+
+/* Drop hints — use brand accent */
+.droppable{ outline:2px dashed transparent; outline-offset:4px; transition:outline-color .12s }
+.droppable.is-over{ outline-color:var(--brand-orange) }
+/* --- Light canvas fix overrides --- */
+body, .shell { background:#fff; }
+.canvas { background:#fff; }                 /* toolbar area */
+.canvas-inner {
+  background:#fff;                           /* main drop zone */
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:16px;
+}
+
+/* optional: give the overall page a tiny breathing room */
+.canvas { padding:18px 18px 24px; }
+
+/* optional: tighten palette chips text color for contrast on white chips */
+.palette .item { color:#222; }
+
+.block.bookingflow {
+  border:2px dashed var(--brand-orange);
+  background:#fff;
+  padding:20px;
+  border-radius:12px;
+  text-align:center;
+  color:var(--ink);
+  font-weight:500;
+}
+/* Center the stage */
+#canvas {
+  max-width: 1000px;
+  margin: 24px auto;
+  min-height: 60vh;
+}
+
+/* Big hint when empty */
+#canvas:empty {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:1px dashed var(--brand-peach);
+  border-radius:12px;
+  background:#fff;
+}
+#canvas:empty::before {
+  content:"Drag elements here";
+  font-weight:600;
+  color:var(--muted);
+  padding:24px 32px;
+}

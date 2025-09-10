@@ -1,3 +1,29 @@
+const osList = document.getElementById('optionset-list');
+const osDetail = document.getElementById('optionset-detail');
+const osForm = document.getElementById('optionset-form');
+const osInput = document.getElementById('new-optionset');
+const osKindCreateSelect = document.getElementById('optionset-kind-create');
+const osSelectedId = document.getElementById('selected-optionset-id');
+const osNameInput = document.getElementById('optionset-name-input');
+const osRenameBtn = document.getElementById('optionset-rename-btn');
+const osDeleteBtn = document.getElementById('optionset-delete-btn');
+const osKindSelect = document.getElementById('optionset-kind');
+const osKindSaveBtn = document.getElementById('optionset-kind-save');
+
+const ovTbody = document.getElementById('optionvalues-tbody');
+const ovForm = document.getElementById('optionvalue-form');
+const ovLabelInput = document.getElementById('ov-label');
+const ovImageUrl = document.getElementById('ov-imageUrl');
+const ovNumberValue = document.getElementById('ov-numberValue');
+const ovBoolValue = document.getElementById('ov-boolValue');
+const ovColorHex = document.getElementById('ov-colorHex');
+const ovOrderInput = document.getElementById('ov-order');
+
+const ovMetaImage = document.getElementById('ov-meta-image');
+const ovMetaNumber = document.getElementById('ov-meta-number');
+const ovMetaBoolean = document.getElementById('ov-meta-boolean');
+const ovMetaColor = document.getElementById('ov-meta-color');
+
 // public/js/admin.js
 document.addEventListener('DOMContentLoaded', () => {
   console.log('admin.js loaded');
@@ -112,51 +138,63 @@ const osKindCreateSelect = document.getElementById('optionset-kind-create'); // 
     await loadDataTypes();
   });
 
-  // ----------------------------
-  // Load DataTypes list
-  // ----------------------------
-  async function loadDataTypes() {
-    list.innerHTML = '<li>Loading…</li>';
-    const res = await fetch('/api/datatypes');
+// ----------------------------
+// Load DataTypes list
+// ----------------------------
+async function loadDataTypes() {
+  list.innerHTML = '<li>Loading…</li>';
+  try {
+    const res = await fetch('/api/datatypes', { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const items = await res.json();
 
-    if (!Array.isArray(items)) { list.innerHTML = '<li>Failed to load</li>'; return; }
-    if (items.length === 0)     { list.innerHTML = '<li>No data types yet</li>'; return; }
+    if (!Array.isArray(items) || items.length === 0) {
+      list.innerHTML = '<li>No data types yet</li>';
+      return;
+    }
 
     list.innerHTML = '';
     items.forEach(dt => {
       const li = document.createElement('li');
-      li.textContent = dt.name;
+      li.textContent = dt.name || '(unnamed)';
       li.style.cursor = 'pointer';
+      li.tabIndex = 0;             // keyboard focus
+      li.dataset.id = dt._id;      // for selected styling later
 
-      li.addEventListener('click', async () => {
-        // store selection
+      const selectType = async () => {
         selectedIdInput.value = dt._id;
 
-        // update the H2 title in Fields tab
         const titleSpan = document.querySelector('#content2 #type-name');
         if (titleSpan) titleSpan.textContent = dt.name;
 
-        // show the small context note above the list
         if (fieldCtx && fieldCtxName) {
           fieldCtxName.textContent = dt.name;
           fieldCtx.style.display = 'block';
         }
 
-        // load fields for this datatype
-        await loadFieldsForSelected();
+        // highlight selected
+        [...list.children].forEach(el => el.classList.toggle('active', el.dataset.id === dt._id));
 
-        // enable Add Field button + hide form by default
         if (btnShowFieldForm) btnShowFieldForm.disabled = false;
         if (fieldForm) fieldForm.style.display = 'none';
 
-        // switch to the Fields tab
+        await loadFieldsForSelected();
         switchToTab(2);
+      };
+
+      li.addEventListener('click', selectType);
+      li.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectType(); }
       });
 
       list.appendChild(li);
     });
+  } catch (err) {
+    console.error('loadDataTypes failed:', err);
+    list.innerHTML = '<li>Failed to load</li>';
   }
+}
+
 
   // ----------------------------
   // Show/Hide Field form
@@ -242,7 +280,7 @@ fieldForm.addEventListener('submit', async (e) => {
       group.appendChild(opt);
     });
   }
-  
+  //Load Field List
 async function loadFieldsForSelected() {
   const dataTypeId = selectedIdInput.value;
   if (!dataTypeId) {
@@ -296,12 +334,16 @@ async function loadFieldsForSelected() {
     tdName.appendChild(input);
 
    // --- col 2: type / default selector for Dropdown ---
+// --- col 2: type / default selector for Dropdown ---
 const tdType = document.createElement('td');
 
 if (f.type === 'Dropdown' && f.optionSetId) {
-  // label
+  // Show "Dropdown → {SetName}" when available
+  const setName = (typeof f.optionSetId === 'object' && f.optionSetId?.name)
+    ? ` → ${f.optionSetId.name}`
+    : '';
   const typeLabel = document.createElement('div');
-  typeLabel.textContent = 'Dropdown';
+  typeLabel.textContent = `Dropdown${setName}`;
   typeLabel.style.marginBottom = '6px';
   tdType.appendChild(typeLabel);
 
@@ -312,7 +354,6 @@ if (f.type === 'Dropdown' && f.optionSetId) {
   lab.style.marginRight = '6px';
 
   const sel = document.createElement('select');
-  // loading placeholder
   const loading = document.createElement('option');
   loading.textContent = 'Loading…';
   sel.appendChild(loading);
@@ -323,7 +364,8 @@ if (f.type === 'Dropdown' && f.optionSetId) {
 
   // fill options from this field's option set
   (async () => {
-    const r = await fetch(`/api/optionsets/${f.optionSetId}/values`);
+    const setId = idOf(f.optionSetId);
+    const r = await fetch(`/api/optionsets/${setId}/values`);
     const vals = await r.json();
     sel.innerHTML = '';
 
@@ -334,7 +376,7 @@ if (f.type === 'Dropdown' && f.optionSetId) {
 
     (vals || []).forEach(v => {
       const opt = document.createElement('option');
-      opt.value = v._id;        // store OptionValue _id as default
+      opt.value = v._id;
       opt.textContent = v.label;
       sel.appendChild(opt);
     });
@@ -359,16 +401,28 @@ if (f.type === 'Dropdown' && f.optionSetId) {
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
       alert(err.error || 'Failed to save default');
-      // revert UI
       sel.value = f.defaultOptionValueId || '';
       return;
     }
     f.defaultOptionValueId = defaultOptionValueId;
   });
+
+} else if (f.type === 'Reference') {
+  // Prefer populated name, otherwise look it up
+  if (f.referenceTo && typeof f.referenceTo === 'object' && f.referenceTo?.name) {
+    tdType.textContent = `Reference → ${f.referenceTo.name}`;
+  } else {
+    tdType.textContent = 'Reference';
+    (async () => {
+      const map = await getDTMap();
+      tdType.textContent = `Reference → ${map[idOf(f.referenceTo)] || '(unknown)'}`;
+    })();
+  }
+
 } else {
-  // non-dropdown fields: just show the type
-  tdType.textContent = (f.type === 'Reference') ? 'Reference' : f.type;
+  tdType.textContent = f.type;
 }
+
 
 
     // --- col 3: delete (soft) ---

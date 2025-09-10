@@ -78,7 +78,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // logged in as pro now
       window.currentUser = data.user;
-      location.href = data.redirect || next || "/accept-appointments";
+      location.href = data.redirect || next || "/appointment-settings";
     } catch (err) {
       console.error(err); alert("Sign up error.");
     }
@@ -101,7 +101,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await r.json().catch(() => ({}));
       if (!r.ok) return alert(data.message || "Login failed");
       window.currentUser = data.user;
-      location.href = data.redirect || next || "/accept-appointments";
+      location.href = data.redirect || next || "/appointment-settings";
     } catch (err) {
       console.error(err); alert("Login error.");
     }

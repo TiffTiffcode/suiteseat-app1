@@ -1,0 +1,117 @@
+<div class="tpl tpl-showcase" id="tpl-showcase-root">
+  <!-- Header -->
+  <header class="tpl-header">
+ <button class="tpl-burger" id="tpl-burger" aria-label="Open menu" aria-controls="tpl-drawer" aria-expanded="false">
+  <svg class="tpl-burger__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round"
+          d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+  </svg>
+</button>
+
+    <nav class="tpl-auth" style="display:none">
+      <a class="tpl-link" href="/login">Log in</a>
+      <a class="tpl-btn"  href="/signup">Sign up</a>
+    </nav>
+  </header>
+
+  <!-- Sidebar-->
+  <aside class="tpl-drawer" id="tpl-drawer" aria-hidden="true">
+    <div class="tpl-drawer__scrim" id="tpl-drawer-scrim"></div>
+    <div class="tpl-drawer__panel">
+      <div class="tpl-drawer__title">Menu</div>
+      <ul class="tpl-drawer__list">
+        <li><button class="tpl-drawer__item" data-target="tpl-gallery">Gallery</button></li>
+        <li><button class="tpl-drawer__item" data-target="tpl-policy">Policy</button></li>
+        <li><button class="tpl-drawer__item" data-action="contact">Contact</button></li>
+      </ul>
+    </div>
+  </aside>
+
+  <!-- Logo (mid size) -->
+  <section id="tpl-logo" class="tpl-section tpl-logo">
+    <img id="tpl-logo-img" alt="Pro logo" />
+  </section>
+
+  <!-- Gallery (horizontal strip with semi-hidden arrows) -->
+  <section id="tpl-gallery" class="tpl-section tpl-gallery">
+    <div class="tpl-gallery__viewport" id="tpl-gallery-viewport">
+      <div class="tpl-gallery__strip" id="tpl-gallery-strip">
+        <!-- images injected by JS or left as defaults -->
+        <img src="/qassets/img/placeholder-1.jpg" alt="" />
+        <img src="/qassets/img/placeholder-2.jpg" alt="" />
+        <img src="/qassets/img/placeholder-3.jpg" alt="" />
+      </div>
+    </div>
+<button class="tpl-gallery__arrow left"  id="tpl-gal-prev" aria-label="Previous">
+  <span class="tpl-arrow-icon" aria-hidden="true">‹</span>
+</button>
+<button class="tpl-gallery__arrow right" id="tpl-gal-next" aria-label="Next">
+  <span class="tpl-arrow-icon" aria-hidden="true">›</span>
+</button>
+
+  </section>
+
+  <!-- Styles (a bit larger) -->
+  <section id="tpl-styles" class="tpl-section tpl-image">
+    <img id="tpl-styles-img" alt="Styles showcase" />
+  </section>
+
+  <!-- Location (slightly taller than header height) -->
+  <section id="tpl-location" class="tpl-section tpl-banner">
+    <img id="tpl-location-img" alt="City & state" />
+  </section>
+
+  <!-- Policy (4 icon/text cards) -->
+<!-- Policy (3 images) -->
+<section id="tpl-policy" class="tpl-section tpl-policy tpl-policy--images">
+  <div class="tpl-policy__images">
+    <figure id="tpl-policy-fig-1" class="tpl-policy-img">
+      <img id="tpl-policy-img-1" alt="Policy image 1" />
+    </figure>
+    <figure id="tpl-policy-fig-2" class="tpl-policy-img">
+      <img id="tpl-policy-img-2" alt="Policy image 2" />
+    </figure>
+    <figure id="tpl-policy-fig-3" class="tpl-policy-img">
+      <img id="tpl-policy-img-3" alt="Policy image 3" />
+    </figure>
+  </div>
+</section>
+
+
+  <!-- Single image section -->
+  <section id="tpl-image-1" class="tpl-section tpl-image">
+    <img id="tpl-image-1-img" alt="Promo or style" />
+  </section>
+
+  <!-- Larger image section -->
+  <section id="tpl-image-2" class="tpl-section tpl-image tpl-image--large">
+    <img id="tpl-image-2-img" alt="Feature visual" />
+  </section>
+
+  <!-- Booking flow mount -->
+  <section id="tpl-flow" class="tpl-section tpl-flow">
+    <div data-slot="flow"></div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="tpl-footer">
+    <div class="tpl-powered">Powered by <strong>Suiteseat</strong></div>
+  </footer>
+
+  <!-- Contact modal -->
+  <div class="tpl-modal" id="tpl-contact-modal" aria-hidden="true">
+    <div class="tpl-modal__scrim" id="tpl-contact-scrim"></div>
+    <div class="tpl-modal__panel" role="dialog" aria-modal="true" aria-labelledby="tpl-contact-title">
+      <button class="tpl-modal__close" id="tpl-contact-close" aria-label="Close">×</button>
+      <h3 class="tpl-modal__title" id="tpl-contact-title">Contact</h3>
+      <div class="tpl-modal__body">
+        <div><strong>Phone:</strong> <a id="tpl-contact-phone" href="#"></a></div>
+        <div><strong>Email:</strong> <a id="tpl-contact-email" href="#"></a></div>
+        <div><strong>Address:</strong> <span id="tpl-contact-addr"></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
