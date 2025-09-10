@@ -347,11 +347,87 @@ padding:10px;}
             font-weight: 700;
             color: #333;
         }
-.calendar-container {
+/* Use ONE version of .calendar-container */
+.calendar-container{
   width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
   padding: 1rem;
   box-sizing: border-box;
 }
+/* If you need 75% when a sidebar is visible, gate it behind a class */
+.content-area.with-sidebar .calendar-container{ width: 75%; }
+
+/* Wrap that can scroll horizontally on small screens */
+.calendar-wrapper{
+  width:100%;
+  max-width:900px;
+  margin:0 auto;        /* centers the whole calendar block */
+  padding:1rem;
+  overflow-x:auto;      /* allows sideways scroll if ever needed */
+}
+
+
+/* Weekday row and month grid use identical columns */
+.weekdays-grid,
+.days-grid{
+  display:grid;
+  grid-template-columns: repeat(7, minmax(34px, 1fr)); /* 7 equal cols, can shrink */
+  gap:.5rem;
+}
+@media (max-width:480px){
+  .calendar-availability-time,
+  .day-availability-label{ display:none; }
+  .day-cell{ font-size:.9rem; }
+}
+
+
+/* On very narrow phones: keep a reasonable minimum width and let the wrapper scroll */
+
+.day-cell{
+  /* square, centered content */
+  aspect-ratio: 1 / 1;
+  padding: 0;                     /* <-- remove vertical padding */
+  display: grid;
+  place-items: center;
+  border-radius: .5rem;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  transition: background-color .2s, transform .1s;
+}
+
+/* If you want a little inner spacing, put it on a child */
+.day-cell > .day-inner{
+  display: grid;
+  place-items: center;
+  gap: .25rem;
+}
+
+/* Availability label behaves on mobile */
+.day-availability-label,
+.calendar-availability-time{ font-size: .75rem; }
+
+@media (max-width: 480px){
+  .calendar-availability-time,
+  .day-availability-label{ display: none; }   /* hide long text */
+  .available-dot{ display: block; }           /* show a dot instead */
+}
+
+/* Optional: smaller chrome on narrow viewports */
+@media (max-width: 640px){
+  .calendar-header{ font-size: 1.1rem; }
+  .nav-button{ padding: .45rem .7rem; font-size: .9rem; }
+}
+.calendar-header{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  max-width:900px;
+  margin:0 auto;
+}
+
 
         .nav-button {
             background-color: #efb37c; /* Indigo 500 */
@@ -376,21 +452,7 @@ padding:10px;}
             transform: translateY(0);
         }
 
-        .weekdays-grid {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 0.5rem;
-            text-align: center;
-            font-weight: 600;
-            color: #6b7280; /* Gray 500 */
-        }
-
-    .days-grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(40px, 1fr)); /* flexible columns */
-  gap: 0.5rem;
-  word-wrap: break-word;
-}
+  
         .day-cell {
             padding: 0.75rem 0.5rem;
             border-radius: 0.5rem; /* Slightly rounded day cells */
@@ -485,22 +547,7 @@ padding:10px;}
 
 
 
-          /* Default width when sidebar is visible */
-.calendar-container {
-    flex-grow: 1;
-  width: 75%;
-  margin: 0 auto;
-  transition: width 0.3s ease;
-}
 
-/* Full width when sidebar is hidden */
-.calendar-container.full-width {
-  width: 100%;
-}
-
-.content-area.full-width {
-  width: 100%;
-}
 
 .day-availability-label {
   font-size: 0.7rem;
@@ -703,3 +750,62 @@ padding:10px;}
 .tab-item.active svg {
   fill: orange; /* optional: makes the icon orange too */
 }
+/* ---- Calendar (final) ------------------------------------------ */
+.calendar-container{
+  width:100%;
+  max-width:900px;
+  margin-inline:auto;   /* center */
+  padding-inline:16px;
+  box-sizing:border-box;
+}
+
+
+/* 7 columns always, each column can shrink a lot on phones */
+.weekdays-grid,
+.days-grid{
+  display:grid;
+  grid-template-columns: repeat(7, minmax(clamp(34px, 10.5vw, 70px), 1fr));
+  gap: clamp(4px, 1.2vw, 8px);
+}
+
+/* square cells, no extra padding */
+.day-cell{
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: .5rem;
+  font-weight: 500;
+  color:#374151;
+  transition: background-color .2s, transform .1s;
+  font-size: clamp(12px, 2.6vw, 16px);  /* text scales down too */
+}
+
+/* optional inner wrapper if you show extra lines */
+.day-cell > .day-inner{
+  display:grid;
+  place-items:center;
+  gap:.25rem;
+}
+
+/* hover/current styles – keep as you like */
+.day-cell:hover:not(.empty):not(.current-day){ background:#e0e7ff; transform:translateY(-1px); }
+.day-cell.empty{ background:transparent; color:#d1d5db; }
+.day-cell.current-day{ background:#efb37c; color:#fff; font-weight:700; box-shadow:0 2px 4px rgba(0,0,0,.1); transform:scale(1.05); }
+
+/* hide long availability text on tiny screens, use dot instead if you want */
+.available-dot{ display:none; width:8px; height:8px; background:orange; border-radius:50%; }
+@media (max-width:480px){
+  .calendar-availability-time, .day-availability-label{ display:none; }
+  .available-dot{ display:block; }
+}
+
+@media (max-width: 480px){
+  .calendar-container{
+    transform: scale(.8);
+    transform-origin: top center;
+   
+  }
+}
+
+

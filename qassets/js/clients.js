@@ -1314,21 +1314,7 @@ window.ensureClientBusinessOptions = async function ensureClientBusinessOptions(
   }
 };
 
-// Auto-fill once when the popup becomes visible (covers ANY open method)
-(function autoFillAddClientOnce(){
-  const popup = document.getElementById("popup-add-client");
-  if (!popup) return; // if HTML injected later, rerun this snippet after injection
 
-  const observer = new MutationObserver(() => {
-    const visible = popup.style.display !== "none";
-    const sel = popup.querySelector("#client-business");
-    if (visible && sel && sel.options.length <= 1) {
-      window.ensureClientBusinessOptions(window.selectedBusinessId);
-      observer.disconnect(); // run once; remove this line if you want it to re-run every open
-    }
-  });
-  observer.observe(popup, { attributes: true, attributeFilter: ["style"] });
-})();
 
 async function loadBusinessOptionsInto(selectId, preferredId = "") {
   const originalId = "client-business"; // what your current function targets

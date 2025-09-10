@@ -1133,3 +1133,8 @@ populateTimeSelect24('current-day-end');
 
   document.getElementById('availability-popup').style.display = 'block';
 }
+
+
+
+
+///////////////////////////////////////////////////////////
