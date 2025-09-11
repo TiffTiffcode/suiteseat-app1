@@ -1,3 +1,19 @@
+  const API = (type) => `/api/records/${encodeURIComponent(type)}`;
+
+  
+  
+  function toYMD(d) {
+  const x = new Date(d);
+  x.setHours(0,0,0,0);
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, '0');
+  const day = String(x.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`; // local YYYY-MM-DD
+}
+
+
+
+
 // define once, only if not already defined
 // --- DEV ONLY: make this tab "admin" so /api/records works ---
 (async () => {
@@ -6,8 +22,6 @@
 
 // --- Admin API constants (define once) ---
 const TYPE_UPCOMING = "Upcoming Hours";
-const API_ADMIN = (type) => `/api/records/${encodeURIComponent(type)}`;
-
 
 document.addEventListener("DOMContentLoaded", () => {
   // =========================
@@ -176,43 +190,114 @@ if (loginStatus) {
   // =========================
   // TABS (together)
   // =========================
-  const calendarTabs     = document.querySelectorAll(".calendarOptions");
-  const calendarSections = document.querySelectorAll(".content-area > div");
+const calendarTabs     = document.querySelectorAll(".calendarOptions");
+const calendarSections = document.querySelectorAll(".content-area > div");
 
-  calendarTabs.forEach(tab => {
-    tab.addEventListener("click", () => {
-      const targetId = tab.getAttribute("data-target");
-      calendarSections.forEach(s => s.style.display = "none");
-      calendarTabs.forEach(t => t.classList.remove("active-tab"));
-      document.getElementById(targetId)?.style?.setProperty("display", "block");
-      tab.classList.add("active-tab");
-    });
+function isMobile() {
+  return window.matchMedia("(max-width: 500px)").matches;
+}
+
+calendarTabs.forEach(tab => {
+  tab.addEventListener("click", () => {
+    const targetId = tab.dataset.target;
+
+    // show the selected section
+    calendarSections.forEach(s => s.style.display = "none");
+    calendarTabs.forEach(t => t.classList.remove("active-tab"));
+    const sectionEl = document.getElementById(targetId);
+    sectionEl?.style?.setProperty("display", "block");
+    tab.classList.add("active-tab");
+
+    // smooth scroll the section into view (titles have scroll-margin in CSS)
+    sectionEl?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    // close the sidebar drawer on small screens
+    if (isMobile()) {
+      if (typeof closeSidebar === "function") {
+        closeSidebar();
+      } else {
+        // fallback in case closeSidebar() isn't in scope
+        const sidebar = document.getElementById("calendar-sidebar");
+        const overlay = document.getElementById("sidebar-overlay");
+        sidebar?.classList.remove("is-open");
+        overlay?.classList.remove("show");
+        document.body.classList.remove("no-scroll");
+      }
+    }
   });
+});
 
   // =========================
   // SIDEBAR TOGGLER (optional block)
   // =========================
-  const sidebar           = document.getElementById("calendar-sidebar");
-  const openBtn           = document.getElementById("open-sidebar-btn");   // ensure exists in HTML if you use it
-  const closeBtn          = document.getElementById("close-sidebar-btn");
-  const calendarContainer = document.querySelector(".calendar-container");
+ // SIDEBAR TOGGLER (overlay on <=500px)
+const sidebar           = document.getElementById("calendar-sidebar");
+const openBtn           = document.getElementById("open-sidebar-btn");
+const closeBtn          = document.getElementById("close-sidebar-btn");
+const calendarContainer = document.querySelector(".calendar-container");
+const overlay           = document.getElementById("sidebar-overlay");
 
-  if (closeBtn && sidebar && calendarContainer) {
-    closeBtn.addEventListener("click", () => {
-      sidebar.classList.add("hidden");
-      calendarContainer.classList.add("full-width");
-      if (openBtn)  openBtn.style.display = "block";
-      closeBtn.style.display = "none";
-    });
+function isMobile() {
+  return window.matchMedia("(max-width: 500px)").matches;
+}
+
+function openSidebar() {
+  if (!sidebar) return;
+
+  if (isMobile()) {
+    sidebar.classList.add("is-open");
+    overlay?.classList.add("show");
+    document.body.classList.add("no-scroll");
+  } else {
+    sidebar.classList.remove("hidden");
+    calendarContainer?.classList.remove("full-width");
   }
-  if (openBtn && sidebar && calendarContainer) {
-    openBtn.addEventListener("click", () => {
-      sidebar.classList.remove("hidden");
-      calendarContainer.classList.remove("full-width");
-      openBtn.style.display = "none";
-      if (closeBtn) closeBtn.style.display = "block";
-    });
+
+  if (openBtn)  openBtn.style.display = "none";
+  if (closeBtn) closeBtn.style.display = "block";
+
+  openBtn?.setAttribute("aria-expanded", "true");
+  sidebar?.setAttribute("aria-hidden", "false");
+}
+
+function closeSidebar() {
+  if (!sidebar) return;
+
+  if (isMobile()) {
+    sidebar.classList.remove("is-open");
+    overlay?.classList.remove("show");
+    document.body.classList.remove("no-scroll");
+  } else {
+    sidebar.classList.add("hidden");
+    calendarContainer?.classList.add("full-width");
   }
+
+  if (openBtn)  openBtn.style.display = "block";
+  if (closeBtn) closeBtn.style.display = "none";
+
+  openBtn?.setAttribute("aria-expanded", "false");
+  sidebar?.setAttribute("aria-hidden", "true");
+}
+
+openBtn?.addEventListener("click", openSidebar);
+closeBtn?.addEventListener("click", closeSidebar);
+overlay?.addEventListener("click", closeSidebar);
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && isMobile() && sidebar?.classList.contains("is-open")) {
+    closeSidebar();
+  }
+});
+
+window.addEventListener("resize", () => {
+  if (!isMobile()) {
+    overlay?.classList.remove("show");
+    document.body.classList.remove("no-scroll");
+    sidebar?.classList.remove("is-open");
+    // optional: keep desktop state collapsed or expanded as you prefer
+  }
+});
+
 
   // Kick things off
   initLogin();
@@ -259,160 +344,174 @@ function generateTimeOptions() {
 generateTimeOptions();
 
 /////////////////////////////////////////////////////////////
+
             //Upcoming Hours    
- document.getElementById("popup-close")?.addEventListener("click", () => {
+// Close popup (if present)
+document.getElementById("popup-close")?.addEventListener("click", () => {
   document.getElementById("availability-popup").style.display = "none";
 });
 
-//Upcoming Hours Calendar 
-// Get references to DOM elements
+/* ===== Upcoming Hours calendar inside #upcomingHours-section ===== */
 
-
-
-        /**
-         * Generates and displays the calendar for a given year and month.
-         * @param {number} year - The year to display.
-         * @param {number} month - The month to display (0-indexed: 0 for January, 11 for December).
-         */
-
-
-// ===== Month calendar =====
-
-// 12-hour formatter; accepts "HH:mm" or already "h:mm AM/PM"
-// --- helpers you can keep near your other helpers ---
-// ───── ONE-TIME GLOBALS (define once) ───────────────────────────
-window.API ??= (type) => `/api/records/${encodeURIComponent(type)}`;
 window.TYPE_UPCOMING ??= 'Upcoming Hours';
-
-// helpers
-function pad(n){ return String(n).padStart(2,'0'); }
-function toYMD(d){
-  const x = new Date(d); x.setHours(0,0,0,0);
-  return `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`;
-}
-function formatTime(t){
-  if (!t) return '';
-  if (/\b(AM|PM)\b/i.test(t)) return t;        // already 12-hour
-  const [hStr, mStr='0'] = String(t).split(':');
-  let h = parseInt(hStr, 10);
-  const m = parseInt(mStr, 10);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  h = ((h + 11) % 12) + 1;                     // 0/12 -> 12
-  return `${h}:${String(m).padStart(2,'0')} ${ampm}`;
+//make calendar say 2 months ago ect
+// Month label: This month / Next month / 2 months away / Last month / 2 months ago ...
+function relativeMonthLabel(viewYear, viewMonth) {
+  const today = new Date();
+  const diff = (viewYear - today.getFullYear()) * 12 + (viewMonth - today.getMonth());
+  if (diff === 0)  return 'This month';
+  if (diff === 1)  return 'Next month';
+  if (diff === -1) return 'Last month';
+  return diff > 1 ? `${diff} months away` : `${Math.abs(diff)} months ago`;
 }
 
-// tolerant mapper: pulls Date/Start/End regardless of exact label casing
-function rowsToSavedHoursMap(rows){
+function setRelativeMonthBadge(y, m) {
+  const el = document.querySelector('#upcomingHours-section .week-label');
+  if (el) el.textContent = relativeMonthLabel(y, m);
+}
+
+
+/////////////
+(function initUpcomingHoursCalendar(){
+  const section = document.getElementById('upcomingHours-section');
+  if (!section) return;
+
+  const monthYearEl = section.querySelector('#uh-monthYear');
+  const daysGridEl  = section.querySelector('#uh-days');
+  const prevBtn     = section.querySelector('#uh-prev');
+  const nextBtn     = section.querySelector('#uh-next');
+
+  const monthNames = ['January','February','March','April','May','June',
+                      'July','August','September','October','November','December'];
+
+  // helpers scoped to this calendar
+  const pad = (n) => String(n).padStart(2,'0');
+
+  const formatTime = (t) => {
+    if (!t) return '';
+    if (/\b(AM|PM)\b/i.test(t)) return t;        // already 12-hour
+    const [hStr, mStr='0'] = String(t).split(':');
+    let h = parseInt(hStr, 10), m = parseInt(mStr, 10);
+    const ap = h >= 12 ? 'PM' : 'AM';
+    h = ((h + 11) % 12) + 1;
+    return `${h}:${String(m).padStart(2,'0')} ${ap}`;
+  };
+const rowsToSavedHoursMap = (rows) => {
   const map = {};
   (rows || []).forEach(r => {
     const v = r.values || {};
-    const date  = v['Date'] || v.date || v['date'];
-    if (!date) return;
-    const ymd   = String(date).split('T')[0];
-    const start = v['Start Time'] || v['Start'] || v.start || v['start'] || '';
-    const end   = v['End Time']   || v['End']   || v.end   || v['end']   || '';
-    if (ymd && (start || end)) map[ymd] = { start, end };
+    // Prefer a plain dateKey if present; fallback to Date field
+    const raw = v.dateKey || v['Date'] || v.date || '';
+    const ymd = String(raw).slice(0, 10); // works for "YYYY-MM-DD" or ISO
+    if (!ymd) return;
+   const start = v['Start'] || v['Start Time'] || '';
+const end   = v['End']   || v['End Time']   || '';
+
+ if ((start || end) && !map[ymd]) map[ymd] = { start, end };
+
   });
+  // cache globally so Save can update immediately
+  window.upcomingHoursMap = map;
   return map;
-}
+};
 
-// ───── MONTH CALENDAR (keep your element refs) ──────────────────
-const monthYearDisplay = document.getElementById('monthYear');
-const calendarDaysGrid = document.getElementById('calendarDays');
-const prevMonthBtn     = document.getElementById('prevMonth');
-const nextMonthBtn     = document.getElementById('nextMonth');
+  const today = new Date();
+  let viewYear  = today.getFullYear();
+  let viewMonth = today.getMonth();
 
-let currentDate  = new Date();
-let currentMonth = currentDate.getMonth();
-let currentYear  = currentDate.getFullYear();
-const today      = new Date();
+  async function loadAndGenerateCalendar(){
+    const businessId = document.getElementById('dropdown-category-business')?.value || '';
+    const calendarId = document.getElementById('dropdown-availability-calendar')?.value || '';
 
-async function loadAndGenerateCalendar(){
-  const businessId = document.getElementById('dropdown-category-business')?.value || '';
-  const calendarId = document.getElementById('dropdown-availability-calendar')?.value || '';
-  let savedHoursMap = {};
+    // visible month range
+    const start = new Date(viewYear, viewMonth, 1);
+    const end   = new Date(viewYear, viewMonth + 1, 0);
 
-  // visible month range
-  const start = new Date(currentYear, currentMonth, 1);
-  const end   = new Date(currentYear, currentMonth + 1, 0);
+    const where = { Date: { $gte: toYMD(start), $lte: toYMD(end) } };
+    if (businessId) where['Business'] = businessId;
+    if (calendarId) where['Calendar'] = calendarId;
 
-  // build WHERE; leave out filters if dropdowns are empty
-  const where = { Date: { $gte: toYMD(start), $lte: toYMD(end) } };
-  if (businessId) where['Business'] = businessId;
-  if (calendarId) where['Calendar'] = calendarId;
+    let savedMap = {};
+    try{
+      const url = `${API(TYPE_UPCOMING)}?where=${encodeURIComponent(JSON.stringify(where))}&limit=500&sort=-updatedAt&ts=${Date.now()}`;
 
-  const url = `${API(TYPE_UPCOMING)}?where=${encodeURIComponent(JSON.stringify(where))}&limit=500&ts=${Date.now()}`;
-  console.log('[Upcoming] GET', url);
+      const res = await fetch(url, { credentials:'include', cache:'no-store' });
+      const rows = await res.json().catch(()=>[]);
+      if (res.ok && Array.isArray(rows)) savedMap = rowsToSavedHoursMap(rows);
+    }catch(e){ console.error('Load upcoming hours failed', e); }
 
-  try{
-    const res  = await fetch(url, { credentials: 'include', cache: 'no-store' });
-    const rows = await res.json().catch(() => []);
-    console.log('[Upcoming] status', res.status, 'rows', Array.isArray(rows)? rows.length : rows);
+   renderMonth(viewYear, viewMonth, savedMap);
+setRelativeMonthBadge(viewYear, viewMonth);   // <-- add this line
 
-    if (res.ok && Array.isArray(rows)) {
-      savedHoursMap = rowsToSavedHoursMap(rows);
-      console.log('[Upcoming] keys', Object.keys(savedHoursMap));
-    }
-  } catch (e) {
-    console.error('Failed to load upcoming hours:', e);
   }
 
-  generateCalendar(currentYear, currentMonth, savedHoursMap);
-}
-window.loadAndGenerateCalendar = loadAndGenerateCalendar;
+  function renderMonth(year, month, saved = {}){
+    // title
+    if (monthYearEl) monthYearEl.textContent = `${monthNames[month]} ${year}`;
 
-function generateCalendar(year, month, savedHoursMap = {}){
-  calendarDaysGrid.innerHTML = '';
-  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  monthYearDisplay.textContent = `${monthNames[month]} ${year}`;
+    // grid
+    daysGridEl.innerHTML = '';
 
-  const first = new Date(year, month, 1);
-  const lead  = first.getDay();
-  const days  = new Date(year, month + 1, 0).getDate();
+    const first   = new Date(year, month, 1);
+    const lead    = first.getDay();
+    const numDays = new Date(year, month + 1, 0).getDate();
 
-  for (let i=0;i<lead;i++){
-    const d = document.createElement('div');
-    d.className = 'day-cell empty';
-    calendarDaysGrid.appendChild(d);
-  }
-
-  for (let day=1; day<=days; day++){
-    const cell = document.createElement('div');
-    cell.className = 'day-cell';
-    cell.textContent = day;
-
-    const iso = `${year}-${pad(month+1)}-${pad(day)}`;
-    const avail = savedHoursMap[iso];
-    if (avail && (avail.start || avail.end)){
-      const timeDiv = document.createElement('div');
-      timeDiv.className = 'availability-time';
-      timeDiv.textContent = `${formatTime(avail.start)} – ${formatTime(avail.end)}`;
-      cell.classList.add('has-availability');
-      cell.appendChild(timeDiv);
+    // leading blanks
+    for (let i=0;i<lead;i++){
+      const blank = document.createElement('div');
+      blank.className = 'day-cell empty';
+      daysGridEl.appendChild(blank);
     }
 
-    if (day===today.getDate() && month===today.getMonth() && year===today.getFullYear()){
-      cell.classList.add('current-day');
+    // month days
+    for (let d=1; d<=numDays; d++){
+      const cell = document.createElement('div');
+      cell.className = 'day-cell';
+      cell.textContent = d;
+
+      const iso = `${year}-${pad(month+1)}-${pad(d)}`;
+      cell.dataset.iso = iso;
+
+      const avail = saved[iso];
+      if (avail && (avail.start || avail.end)){
+        const t = document.createElement('div');
+        t.className = 'availability-time';
+        t.textContent = `${formatTime(avail.start)} – ${formatTime(avail.end)}`;
+        cell.classList.add('has-availability');
+        cell.appendChild(t);
+      }
+
+      if (d===today.getDate() && month===today.getMonth() && year===today.getFullYear()){
+        cell.classList.add('current-day');
+      }
+
+      daysGridEl.appendChild(cell);
     }
-
-    cell.addEventListener('click', () => openAvailabilityPopup(year, month, day));
-    calendarDaysGrid.appendChild(cell);
   }
-}
 
-// nav buttons
-prevMonthBtn?.addEventListener('click', () => {
-  currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+  // one delegated click handler for all days
+  daysGridEl?.addEventListener('click', (e) => {
+    const el = e.target.closest('.day-cell[data-iso]');
+    if (!el) return;
+    openAvailabilityPopup(el.dataset.iso); // opens + preselects times
+  });
+
+  // nav
+  prevBtn?.addEventListener('click', ()=>{
+    viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+    loadAndGenerateCalendar();
+  });
+  nextBtn?.addEventListener('click', ()=>{
+    viewMonth++; if (viewMonth > 11) { viewMonth = 0;  viewYear++; }
+    loadAndGenerateCalendar();
+  });
+
+  // expose same name other code calls after save
+  window.loadAndGenerateCalendar = loadAndGenerateCalendar;
+
+  // initial
   loadAndGenerateCalendar();
-});
-nextMonthBtn?.addEventListener('click', () => {
-  currentMonth++; if (currentMonth > 11) { currentMonth = 0;  currentYear++; }
-  loadAndGenerateCalendar();
-});
-
-// initial render
-loadAndGenerateCalendar();
-
+})();
 
 
 // ===== Weekly bridge (optional) =====
@@ -429,15 +528,10 @@ function formatDateRange(start, end) {
 }
 let currentWeekStart = getStartOfWeek(new Date());
 function updateWeekDisplay() {
-  const weekLabelEl = document.querySelector('.week-label');
-  if (weekLabelEl) {
-    const start = new Date(currentWeekStart);
-    const end   = new Date(start); end.setDate(end.getDate() + 6);
-    weekLabelEl.textContent = formatDateRange(start, end);
-  }
+  const now = new Date();
+  setRelativeMonthBadge(now.getFullYear(), now.getMonth());
   window.loadAndGenerateCalendar?.();
 }
-window.updateWeekDisplay = updateWeekDisplay;
 
 document.getElementById("prev-week")?.addEventListener("click", () => {
   currentWeekStart.setDate(currentWeekStart.getDate() - 7);
@@ -453,6 +547,37 @@ if (typeof initializeAllTimeSelects === 'function') initializeAllTimeSelects();
 
 
 
+//////////////////////////////////////////////////////////////
+const popupEl        = document.getElementById('availability-popup');
+const popupOverlayEl = document.getElementById('popup-overlay');
+
+function openAvailabilityModal() {
+  if (!popupEl || !popupOverlayEl) return;
+  popupEl.style.display = 'block';
+  popupOverlayEl.classList.add('show');
+  document.body.classList.add('popup-open');
+}
+
+function closeAvailabilityModal() {
+  if (!popupEl || !popupOverlayEl) return;
+  popupEl.style.display = 'none';
+  popupOverlayEl.classList.remove('show');
+  document.body.classList.remove('popup-open');
+}
+
+// close with the “×”
+document.getElementById('popup-close')?.addEventListener('click', closeAvailabilityModal);
+// close by clicking the grey background
+popupOverlayEl?.addEventListener('click', closeAvailabilityModal);
+// close with Escape
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && popupEl?.style.display === 'block') closeAvailabilityModal();
+});
+
+
+
+
+
 //
 // ──────────────────────────────────────────────
 // Weekly Upcoming Hours (only if you still use it)
@@ -464,82 +589,64 @@ if (typeof initializeAllTimeSelects === 'function') initializeAllTimeSelects();
 (function initWeeklyUpcomingHoursOnce() {
   const section = document.getElementById('upcomingHours-section');
   if (!section || section.dataset.weeklyBound) return;
+  section.dataset.weeklyBound = '1'; // set early to prevent double-binding
 
-  // Show/hide time rows when a weekday toggle changes
+  // Toggle show/hide per weekday
   section.querySelectorAll('.day-toggle').forEach(toggle => {
+    const dayName = toggle.id.replace('toggle-upcoming-', ''); // 'sunday', etc.
+    const row  = section.querySelector(`.${dayName}-times`);
+    const sSel = document.getElementById(`start-upcoming-${dayName}`);
+    const eSel = document.getElementById(`end-upcoming-${dayName}`);
+
+    // initial state
+    if (row) row.style.display = toggle.checked ? 'flex' : 'none';
+
     toggle.addEventListener('change', () => {
-      const dayName = toggle.id.replace('toggle-upcoming-', ''); // 'sunday' etc.
-      const timeRow = section.querySelector(`.${dayName}-times`);
-
-      if (timeRow) {
-        timeRow.style.display = toggle.checked ? 'flex' : 'none';
-        if (!toggle.checked) {
-          const startSelect = document.getElementById(`start-upcoming-${dayName}`);
-          const endSelect   = document.getElementById(`end-upcoming-${dayName}`);
-          if (startSelect) startSelect.value = '';
-          if (endSelect)   endSelect.value   = '';
-        }
+      if (row) row.style.display = toggle.checked ? 'flex' : 'none';
+      if (!toggle.checked) {
+        if (sSel) sSel.value = '';
+        if (eSel) eSel.value = '';
       }
     });
   });
 
-  // Initial hide for unchecked days
-  section.querySelectorAll('.day-toggle').forEach(toggle => {
-    const dayName = toggle.id.replace('toggle-upcoming-', '');
-    const timeRow = section.querySelector(`.${dayName}-times`);
-    if (timeRow && !toggle.checked) timeRow.style.display = 'none';
-  });
-
-  // Tab switching → refresh weekly view when "Adjust Upcoming Hours" tab is selected
-  document.querySelectorAll('.calendarOptions').forEach(tab => {
-    tab.addEventListener('click', async () => {
-      const label = tab.textContent.trim();
-      if (label !== 'Adjust Upcoming Hours') return;
-
-      const businessId = document.getElementById('dropdown-category-business')?.value;
-      const calendarId = document.getElementById('dropdown-availability-calendar')?.value;
-
-      if (businessId && calendarId && typeof updateWeekDisplay === 'function') {
-        // Reset to current week and refresh
-        window.currentWeekStart = getStartOfWeek(new Date());
-        await updateWeekDisplay();
-      }
+  // Tab switching → when the "Adjust Upcoming Hours" tab is clicked
+  document.querySelectorAll('.calendarOptions[data-target]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      if (tab.dataset.target !== 'upcomingHours-section') return;
+      window.currentWeekStart = getStartOfWeek(new Date());
+      // No need to await; it's sync
+      if (typeof updateWeekDisplay === 'function') updateWeekDisplay();
     });
   });
 
-  // Calendar dropdown change → refresh weekly view (and monthly grid if you want)
+  // Calendar dropdown change → refresh weekly view (and monthly grid if desired)
   const calSel = document.getElementById('dropdown-availability-calendar');
   if (calSel && !calSel.dataset.weeklyBound) {
-    calSel.addEventListener('change', async (e) => {
+    calSel.addEventListener('change', e => {
       const businessId = document.getElementById('dropdown-category-business')?.value;
       const calendarId = e.target.value;
 
-      if (businessId && calendarId && typeof updateWeekDisplay === 'function') {
+      if (businessId && calendarId) {
         window.currentWeekStart = getStartOfWeek(new Date());
-        await updateWeekDisplay();
+        if (typeof updateWeekDisplay === 'function') updateWeekDisplay();
+        if (typeof loadAndGenerateCalendar === 'function') loadAndGenerateCalendar();
       } else {
         // Clear rows if nothing selected
         ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'].forEach(day => {
-          const toggle = document.getElementById(`toggle-upcoming-${day}`);
-          const row    = document.querySelector(`.${day}-times`);
-          const s      = document.getElementById(`start-upcoming-${day}`);
-          const e2     = document.getElementById(`end-upcoming-${day}`);
-          if (toggle) toggle.checked = false;
-          if (row)    row.style.display = 'none';
-          if (s)      s.value = '';
-          if (e2)     e2.value = '';
+          const t = document.getElementById(`toggle-upcoming-${day}`);
+          const r = section.querySelector(`.${day}-times`);
+          const s = document.getElementById(`start-upcoming-${day}`);
+          const e2= document.getElementById(`end-upcoming-${day}`);
+          if (t)  t.checked = false;
+          if (r)  r.style.display = 'none';
+          if (s)  s.value = '';
+          if (e2) e2.value = '';
         });
-      }
-
-      // Optional: also refresh your monthly calendar grid
-      if (typeof loadAndGenerateCalendar === 'function') {
-        await loadAndGenerateCalendar();
       }
     });
     calSel.dataset.weeklyBound = '1';
   }
-
-  section.dataset.weeklyBound = '1';
 })();
 
 
@@ -558,14 +665,10 @@ if (typeof initializeAllTimeSelects === 'function') initializeAllTimeSelects();
 
 
 
-
-
-
-
-
-
-
 }); // END DOMContentLoaded
+
+if (typeof initializeAllTimeSelects === 'function') initializeAllTimeSelects();
+
 // Canonicalize: ignore spaces, punctuation, and case
 const canon = (s) =>
   String(s ?? '')
@@ -784,27 +887,7 @@ function closeLoginPopup() {
 
 //////////////////////////////////////////////////////////////
         //End Upcoming Hours 
- 
-
-
-const pad2 = (n) => String(n).padStart(2, '0');
-const toYMD = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-
-function timeStrToMinutes(hhmm) {
-  // supports "HH:MM" or "h:mm AM/PM"
-  const ampm = /\s?(AM|PM)$/i.exec(hhmm);
-  if (ampm) {
-    let [h, m] = hhmm.replace(/\s?(AM|PM)/i,'').split(':').map(Number);
-    if (/PM/i.test(ampm[1]) && h !== 12) h += 12;
-    if (/AM/i.test(ampm[1]) && h === 12) h = 0;
-    return h*60 + (m||0);
-  }
-  const [h, m] = hhmm.split(':').map(Number);
-  return h*60 + (m||0);
-}
-      
-
- 
+     
 // "HH:MM" OR "h:mm AM/PM" → minutes since midnight
 function timeStrToMinutes(s) {
   if (!s) return NaN;
@@ -823,161 +906,137 @@ function timeStrToMinutes(s) {
   return NaN;
 }
 
-// Fill a time <select> with 24h values + 12h labels
-function populateTimeSelect24(selectId) {
-  const select = document.getElementById(selectId);
+//Upcoming Hours Section
+
+/* =======================
+   UPCOMING HOURS (new cal)
+   ======================= */
+
+/* Close Upcoming Hours popup */
+
+ 
+/* ---------- helpers you already had ---------- */
+function getStartOfWeek(date) {
+  const copy = new Date(date);
+  const day = copy.getDay(); // 0=Sun
+  copy.setDate(copy.getDate() - day);
+  return new Date(copy.getFullYear(), copy.getMonth(), copy.getDate());
+}
+
+function formatDateRange(startDate, endDate) {
+  const options = { month: "short", day: "numeric" };
+  const startStr = startDate.toLocaleDateString("en-US", options);
+  const endStr   = endDate.toLocaleDateString("en-US", options);
+  const yearStr  = endDate.getFullYear();
+  return `${startStr} – ${endStr}, ${yearStr}`;
+}
+
+function populateTimeSelect(selectElementId) {
+  const select = document.getElementById(selectElementId);
   if (!select) return;
-
-  // Reset and add the default placeholder
   select.innerHTML = "";
-  const defaultOption = document.createElement("option");
-  defaultOption.value = "";
-  defaultOption.textContent = "--:--";
-  select.appendChild(defaultOption);
 
-  // Build options: value = "HH:MM", label = "h:mm AM/PM"
+  const def = document.createElement("option");
+  def.value = "";
+  def.textContent = "--:--";
+  select.appendChild(def);
+
   for (let hour = 0; hour < 24; hour++) {
     for (let min = 0; min < 60; min += 15) {
-      const value24 = `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`; // "13:30"
-
-      const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+      const h12  = hour % 12 === 0 ? 12 : hour % 12;
       const ampm = hour < 12 ? "AM" : "PM";
-      const label = `${hour12}:${String(min).padStart(2, "0")} ${ampm}`; // "1:30 PM"
-
-      const option = document.createElement("option");
-      option.value = value24;       // <--- VALUE used for saving (HH:MM)
-      option.textContent = label;   // <--- LABEL users see (h:mm AM/PM)
-      select.appendChild(option);
+      const t    = `${h12}:${String(min).padStart(2, "0")} ${ampm}`;
+      const opt  = document.createElement("option");
+      opt.value = t;
+      opt.textContent = t;
+      select.appendChild(opt);
     }
   }
 }
 
-//Upcoming Hours Section
-
-
-//close add upcoming hours popup 
-document.getElementById("popup-close").addEventListener("click", () => {
-  document.getElementById("availability-popup").style.display = "none";
-});
-
-
-// This function calculates the start of the week (Sunday) for a given date.
-function getStartOfWeek(date) {
-    const copy = new Date(date);
-    const day = copy.getDay(); // 0 for Sunday, 1 for Monday, etc.
-    copy.setDate(copy.getDate() - day);
-    // Ensure it's the start of the day (00:00:00)
-    return new Date(copy.getFullYear(), copy.getMonth(), copy.getDate());
-}
-
-// This function formats a date range for display (e.g., "Jan 1 – Jan 7, 2025").
-function formatDateRange(startDate, endDate) {
-    const options = { month: "short", day: "numeric" };
-    const startStr = startDate.toLocaleDateString("en-US", options);
-    const endStr = endDate.toLocaleDateString("en-US", options);
-    const yearStr = endDate.getFullYear();
-    return `${startStr} – ${endStr}, ${yearStr}`;
-}
-
-// This function populates time dropdowns (used by both availability and upcoming hours).
-function populateTimeSelect(selectElementId) {
-    const select = document.getElementById(selectElementId);
-    if (!select) {
-        return;
-    }
-    select.innerHTML = ""; // Clear existing options
-
-    // Add a default blank option
-    const defaultOption = document.createElement("option");
-    defaultOption.value = "";
-    defaultOption.textContent = "--:--";
-    select.appendChild(defaultOption);
-
-    const times = [];
-    for (let hour = 0; hour < 24; hour++) {
-        for (let min = 0; min < 60; min += 15) {
-            const hour12 = hour % 12 === 0 ? 12 : hour % 12;
-            const ampm = hour < 12 ? "AM" : "PM";
-            const formattedTime = `${hour12}:${min.toString().padStart(2, "0")} ${ampm}`;
-            times.push(formattedTime);
-        }
-    }
-
-    times.forEach(time => {
-        const option = document.createElement("option");
-        option.value = time;
-        option.textContent = time;
-        select.appendChild(option);
-    });
-}
-
-// This function initializes ALL time select dropdowns on the page.
 function initializeAllTimeSelects() {
-    const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-    days.forEach(day => {
-        populateTimeSelect(`start-${day}`);
-        populateTimeSelect(`end-${day}`);
-        populateTimeSelect(`start-upcoming-${day}`);
-        populateTimeSelect(`end-upcoming-${day}`);
-    });
-}       
+  const days = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+  days.forEach(d => {
+    populateTimeSelect(`start-${d}`);
+    populateTimeSelect(`end-${d}`);
+    populateTimeSelect(`start-upcoming-${d}`);
+    populateTimeSelect(`end-upcoming-${d}`);
+  });
+}
 
-//Open Availability Popup 
 
-async function openAvailabilityPopup(year, month, day) {
-  const popup = document.getElementById('availability-popup');
-  const dateLabel = document.getElementById('popup-date-label');
+/* ---------- hook up the NEW calendar ----------
 
-  const jsDate = new Date(year, month, day);
+Expecting each day cell to look like:
+  <button class="cal-day" data-date="2025-09-10">10</button>
+(You can use <div> as well; the data-date attribute is what matters.)
+*/
+
+/* ---------- popup open for the new calendar ---------- */
+async function openAvailabilityPopup(dateOrYear, month, day) {
+  const popup     = document.getElementById("availability-popup");
+  const dateLabel = document.getElementById("popup-date-label");
+
+  // Accept Date | ISO string | (y,m,d)
+  let jsDate;
+  if (dateOrYear instanceof Date) {
+    jsDate = new Date(dateOrYear.getFullYear(), dateOrYear.getMonth(), dateOrYear.getDate());
+  } else if (typeof dateOrYear === "string") {
+    const d = new Date(dateOrYear + "T00:00:00");
+    jsDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  } else {
+    jsDate = new Date(dateOrYear, month, day);
+    jsDate = new Date(jsDate.getFullYear(), jsDate.getMonth(), jsDate.getDate());
+  }
+
   const ymd = toYMD(jsDate);
-
-  // remember date for the Save handler
   window.upcomingSelectedDate = jsDate;
-  popup.setAttribute('data-date', ymd);
-  dateLabel.textContent = `Availability for ${jsDate.toDateString()}`;
 
-  const businessId = document.getElementById('dropdown-category-business')?.value || '';
-  const calendarId = document.getElementById('dropdown-availability-calendar')?.value || '';
+  popup.setAttribute("data-date", ymd);
+  dateLabel.textContent = jsDate.toLocaleDateString(undefined, {
+    weekday: "long", month: "long", day: "numeric", year: "numeric"
+  });
 
+  const businessId = document.getElementById("dropdown-category-business")?.value || "";
+  const calendarId = document.getElementById("dropdown-availability-calendar")?.value || "";
   if (!businessId || !calendarId) {
-    alert('Please select a business and calendar first.');
+    alert("Please select a business and calendar first.");
     return;
   }
 
-  // clear current values
-// clear current values (no 'row' yet)
-setTimeSelect('current-day-start', '');
-setTimeSelect('current-day-end', '');
+  // 1) Build the selects first
+  populateTimeSelect24('current-day-start');
+  populateTimeSelect24('current-day-end');
+  setTimeSelect('current-day-start', '');
+  setTimeSelect('current-day-end', '');
 
-
+  // 2) Fetch existing values and preselect
   try {
-    // Query by your field labels (canonicalization will also help)
     const where = encodeURIComponent(JSON.stringify({ "Calendar": calendarId, "Date": ymd }));
-    const res = await fetch(
-      `/api/records/${encodeURIComponent(TYPE_UPCOMING)}?where=${where}&ts=${Date.now()}`,
-      { credentials: 'include', cache: 'no-store' }
-    );
+    const res = await fetch(`/api/records/${encodeURIComponent(TYPE_UPCOMING)}?where=${where}&ts=${Date.now()}`, {
+      credentials: "include", cache: "no-store"
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const items = await res.json();
     const row = Array.isArray(items) ? items[0] : null;
 
-if (row?.values) {
-  const v = row.values;
+    if (row?.values) {
+      const v = row.values;
+      // These can be "HH:MM" or "h:mm AM/PM" – setTimeSelect normalizes for you
   setTimeSelect('current-day-start', v.Start || v['Start Time'] || '');
-  setTimeSelect('current-day-end',   v.End   || v['End Time']   || '');
-
+setTimeSelect('current-day-end',   v.End   || v['End Time']   || '');
 
     }
   } catch (err) {
-    console.error('Error loading availability:', err);
+    console.error("Error loading availability:", err);
   }
 
-  popup.style.display = 'block';
+  popup.style.display = "block";
 }
 
 
 // Save Upcoming Hours
-
+/* ---------- time helpers ---------- */
 function to24h(t) {
   if (!t) return '';
   // Already HH:MM?
@@ -985,7 +1044,7 @@ function to24h(t) {
 
   // Convert "h:mm AM/PM" -> "HH:MM"
   const m = String(t).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!m) return t; // give up, return as-is
+  if (!m) return t; // unknown format, return as-is
   let h = parseInt(m[1], 10);
   const mm = m[2];
   const ap = m[3].toUpperCase();
@@ -997,10 +1056,38 @@ function to24h(t) {
 function setTimeSelect(selectId, valueFromDb) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
-  sel.value = to24h(valueFromDb);
+  sel.value = to24h(valueFromDb || '');
 }
 
+/* Fill a <select> so that:
+   - option.value is "HH:MM"
+   - option.text  is "h:mm AM/PM"
+*/
+function populateTimeSelect24(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
 
+  sel.innerHTML = '';
+  const def = document.createElement('option');
+  def.value = '';
+  def.textContent = '--:--';
+  sel.appendChild(def);
+
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      const value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      const h12 = (h % 12) === 0 ? 12 : (h % 12);
+      const ap  = h < 12 ? 'AM' : 'PM';
+      const label = `${h12}:${String(m).padStart(2,'0')} ${ap}`;
+      const opt = document.createElement('option');
+      opt.value = value;     // 24h for databases
+      opt.textContent = label;  // user-friendly
+      sel.appendChild(opt);
+    }
+  }
+}
+
+/* ---------- bind Save button ---------- */
 (function bindUpcomingSaveOnce() {
   const btn = document.getElementById('save-upcoming-day-availability');
   if (!btn || btn.dataset.bound) return;
@@ -1009,13 +1096,8 @@ function setTimeSelect(selectId, valueFromDb) {
     const businessId = document.getElementById('dropdown-category-business')?.value || '';
     const calendarId = document.getElementById('dropdown-availability-calendar')?.value || '';
 
-  const start = to24h(document.getElementById('current-day-start')?.value || '');
-  const end   = to24h(document.getElementById('current-day-end')?.value || '');
-
-    // clear current values (no 'row' yet)
-setTimeSelect('current-day-start', '');
-setTimeSelect('current-day-end', '');
-
+    const start = to24h(document.getElementById('current-day-start')?.value || '');
+    const end   = to24h(document.getElementById('current-day-end')?.value || '');
 
     let jsDate = window.upcomingSelectedDate;
     if (!jsDate) {
@@ -1023,10 +1105,21 @@ setTimeSelect('current-day-end', '');
       if (attr) jsDate = new Date(attr + 'T00:00:00');
     }
 
-    if (!businessId)  return alert('Choose a business first.');
-    if (!calendarId)  return alert('Choose a calendar first.');
-    if (!jsDate)      return alert('Pick a date on the calendar.');
-    if (!start || !end) return alert('Choose start and end time.');
+    if (!businessId)   return alert('Choose a business first.');
+    if (!calendarId)   return alert('Choose a calendar first.');
+    if (!jsDate)       return alert('Pick a date on the calendar.');
+    if (!start && !end) {
+  // allow clearing a day by leaving both blank
+} else if (!start || !end) {
+  return alert('Choose both start and end time, or leave both blank to clear.');
+} else {
+  // validate start < end
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  const startMin = sh * 60 + sm;
+  const endMin   = eh * 60 + em;
+  if (endMin <= startMin) return alert('End time must be after start time.');
+}
 
     const ymd = toYMD(jsDate);
 
@@ -1035,32 +1128,44 @@ setTimeSelect('current-day-end', '');
     btn.textContent = 'Saving…';
 
     try {
-      // Match admin labels exactly
       const whereObj = { "Calendar": calendarId, "Date": ymd };
       const where = encodeURIComponent(JSON.stringify(whereObj));
 
-      // Look for an existing record for this calendar+date
-      const check = await fetch(`${API_ADMIN(TYPE_UPCOMING)}?where=${where}&ts=${Date.now()}`, {
+      // look up existing
+      const check = await fetch(`${API(TYPE_UPCOMING)}?where=${where}&ts=${Date.now()}`, {
         credentials: 'include',
         cache: 'no-store'
       });
       if (!check.ok) throw new Error(`HTTP ${check.status}`);
       const existing = await check.json();
+const clearing = !start && !end;
 
-      // values must use your labels
-      const values = {
-        "Business":     businessId,
-        "Calendar":     calendarId,
-        "Date":         ymd,
-        "Start":   start,
-        "End":     end,
-        "is Available": true
-      };
+const values = clearing
+  ? {
+      "Business":     businessId,
+      "Calendar":     calendarId,
+      "Date":         ymd,
+      "Start":        "",
+      "End":          "",
+      "Start Time":   "",   // keep legacy fields in sync
+      "End Time":     "",
+      "is Available": false
+    }
+  : {
+      "Business":     businessId,
+      "Calendar":     calendarId,
+      "Date":         ymd,
+      "Start":        start,
+      "End":          end,
+      "Start Time":   start, // keep legacy fields in sync
+      "End Time":     end,
+      "is Available": true
+    };
+
 
       if (Array.isArray(existing) && existing.length) {
-        // UPDATE
         const id = existing[0]._id;
-        const up = await fetch(`${API_ADMIN(TYPE_UPCOMING)}/${id}`, {
+        const up = await fetch(`${API(TYPE_UPCOMING)}/${id}`, {
           method: 'PATCH',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -1069,8 +1174,7 @@ setTimeSelect('current-day-end', '');
         if (!up.ok) throw new Error(`HTTP ${up.status}`);
         await up.json();
       } else {
-        // CREATE
-        const create = await fetch(API_ADMIN(TYPE_UPCOMING), {
+        const create = await fetch(API(TYPE_UPCOMING), {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -1080,13 +1184,22 @@ setTimeSelect('current-day-end', '');
         await create.json();
       }
 
-      alert('Saved!');
-      document.getElementById('availability-popup').style.display = 'none';
+   // update local cache so the cell shows new hours immediately
+window.upcomingHoursMap = window.upcomingHoursMap || {};
+if (clearing) {
+  delete window.upcomingHoursMap[ymd];
+} else {
+  window.upcomingHoursMap[ymd] = { start, end };
+}
 
-      // If you have a month-view refresh, call it here
-      if (typeof window.loadAndGenerateCalendar === 'function') {
-        await window.loadAndGenerateCalendar();
-      }
+
+document.getElementById('availability-popup').style.display = 'none';
+// optional: comment this out if the alert is annoying
+alert('Saved!');
+if (typeof window.loadAndGenerateCalendar === 'function') {
+  await window.loadAndGenerateCalendar();
+}
+
     } catch (e) {
       console.error(e);
       alert('Error saving: ' + e.message);
@@ -1099,42 +1212,83 @@ setTimeSelect('current-day-end', '');
   btn.dataset.bound = '1';
 })();
 
-//Show upcoming hours in popup 
-async function preloadUpcomingForDay(calendarId, jsDate) {
-  // Use your admin labels exactly: Calendar / Date
-  const where = encodeURIComponent(JSON.stringify({ "Calendar": calendarId, "Date": toYMD(jsDate) }));
-  const res = await fetch(`${API_ADMIN(TYPE_UPCOMING)}?where=${where}&ts=${Date.now()}`, {
+// ===== Open the availability popup for a given date (ISO "YYYY-MM-DD" or Date) =====
+async function openAvailabilityPopup(dateOrIso) {
+  const popup     = document.getElementById('availability-popup');
+  const dateLabel = document.getElementById('popup-date-label');
+
+  // normalize to a local Date and key
+  let jsDate;
+  if (dateOrIso instanceof Date) {
+    jsDate = new Date(dateOrIso.getFullYear(), dateOrIso.getMonth(), dateOrIso.getDate());
+  } else {
+    const d = new Date(String(dateOrIso) + 'T00:00:00');
+    jsDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  const ymd = toYMD(jsDate);
+  window.upcomingSelectedDate = jsDate;
+
+  if (dateLabel) {
+    dateLabel.textContent = jsDate.toLocaleDateString(undefined, {
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+    });
+  }
+  popup?.setAttribute('data-date', ymd);
+
+  const businessId = document.getElementById('dropdown-category-business')?.value || '';
+  const calendarId = document.getElementById('dropdown-availability-calendar')?.value || '';
+  if (!businessId || !calendarId) {
+    alert('Please select a business and calendar first.');
+    return;
+  }
+
+  // build selects and clear prior values
+  populateTimeSelect24('current-day-start');
+  populateTimeSelect24('current-day-end');
+  setTimeSelect('current-day-start', '');
+  setTimeSelect('current-day-end',   '');
+
+  // fetch existing values (if any)
+// fetch existing values (if any) and preselect
+try {
+  const where = encodeURIComponent(JSON.stringify({ "Calendar": calendarId, "Date": ymd }));
+  const res = await fetch(`/api/records/${encodeURIComponent(TYPE_UPCOMING)}?where=${where}&limit=1&ts=${Date.now()}`, {
     credentials: 'include',
     cache: 'no-store'
   });
-  if (!res.ok) return;
 
-  const arr = await res.json();
-  const row = Array.isArray(arr) ? arr[0] : null;
-  if (!row) return;
+  let startVal = '';
+  let endVal   = '';
 
-  const v = row.values || {};
-  // Prefer "Start Time" / "End Time", fallback to Start/End
-  document.getElementById('current-day-start').value = v["Start Time"] || v.Start || '';
-  document.getElementById('current-day-end').value   = v["End Time"]   || v.End   || '';
+  if (res.ok) {
+    const items = await res.json();
+    const row = Array.isArray(items) ? items[0] : null;
+    if (row?.values) {
+      const v = row.values;
+      startVal = v['Start Time'] || v.Start || '';
+      endVal   = v['End Time']   || v.End   || '';
+    }
+  }
+
+  // Fallback: if DB didn’t return anything, try the in-memory map from the grid
+  if ((!startVal && !endVal) && window.upcomingHoursMap && window.upcomingHoursMap[ymd]) {
+    startVal = window.upcomingHoursMap[ymd].start || '';
+    endVal   = window.upcomingHoursMap[ymd].end   || '';
+  }
+
+  // Set selects (setTimeSelect converts to "HH:MM" if needed)
+  setTimeSelect('current-day-start', startVal);
+  setTimeSelect('current-day-end',   endVal);
+} catch (err) {
+  console.error('Error loading availability:', err);
+  // Still try cache if fetch failed
+  if (window.upcomingHoursMap && window.upcomingHoursMap[ymd]) {
+    const { start = '', end = '' } = window.upcomingHoursMap[ymd];
+    setTimeSelect('current-day-start', start);
+    setTimeSelect('current-day-end',   end);
+  }
 }
 
-function openUpcomingPopupFor(jsDate) {
-  window.upcomingSelectedDate = jsDate;
-  document.getElementById('popup-date-label').textContent =
-    `Availability for ${jsDate.toDateString()}`;
 
-populateTimeSelect24('current-day-start');
-populateTimeSelect24('current-day-end');
-
-
-  const calId = document.getElementById('dropdown-availability-calendar')?.value || '';
-  if (calId) preloadUpcomingForDay(calId, jsDate);
-
-  document.getElementById('availability-popup').style.display = 'block';
+  if (popup) popup.style.display = 'block';
 }
-
-
-
-
-///////////////////////////////////////////////////////////

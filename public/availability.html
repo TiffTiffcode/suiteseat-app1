@@ -5,6 +5,7 @@
     <title>Suite Seat Home</title>
     <link rel="stylesheet" href="/qassets/css/availability.css">
   </head>  
+
   <body>
 
     <header class="header">
@@ -20,8 +21,17 @@
   <button id="logout-btn" style="display: none;">Logout</button>
 </div>
 
+
+</div>
+
   </section>
 </header>
+<!-- Fixed rail under the header that holds the hamburger -->
+<div id="mobile-rail" role="navigation" aria-label="Quick menu">
+  <button id="open-sidebar-btn" class="hamburger" aria-label="Open menu" aria-controls="calendar-sidebar" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+</div>
 
    <!-- Login Popup -->
 <section id="popup-login" class="popup-add-business" style="display: none;">
@@ -52,18 +62,16 @@
 
 
 
-
-
                          <!-- whole bottom sections under Header  -->
  <div class="container">
+<!-- Your sidebar (keep your existing content/IDs; just make sure the close button is inside) -->
+<aside id="calendar-sidebar" aria-hidden="true">
+  <button id="close-sidebar-btn" class="close-drawer" aria-label="Close menu">❮</button>
 
-  <!-- Sidebar -->
-  <div class="sidebar" id="calendar-sidebar">
+  <div class="sidebar-inner">
     <div class="chooseBusiness">
       <div class="calendar-label">
         <h3>Calendar</h3>
-         <!-- Close Arrow -->
-  <button id="close-sidebar-btn" class="close-arrow" style="display: block;">←</button>
       </div>
 
       <div class="form-group" style="margin-top: 20px;">
@@ -82,17 +90,17 @@
     </div>
 
     <!-- Option Tabs -->
- <!-- Option Tabs -->
-<div class="calendarOptions" data-target="onlineBooking-section"><h5>Online Booking Settings</h5></div>
-<div class="calendarOptions" data-target="availability-section"><h5>Manage Availability</h5></div>
-<div class="calendarOptions" data-target="upcomingHours-section"><h5>Adjust Upcoming Hours</h5></div>
-<div class="calendarOptions" data-target="vacation-section"><h5>Manage Vacation Time</h5></div>
+    <div class="calendarOptions" data-target="onlineBooking-section"><h5>Online Booking Settings</h5></div>
+    <div class="calendarOptions" data-target="availability-section"><h5>Manage Availability</h5></div>
+    <div class="calendarOptions" data-target="upcomingHours-section"><h5>Adjust Upcoming Hours</h5></div>
+    <div class="calendarOptions" data-target="vacation-section"><h5>Manage Vacation Time</h5></div>
+  </div>
+</aside>
 
-   </div>
- <!-- right side  -->
- 
 
- <div class="content-area">            
+ <div class="content-area">     
+  
+  
      <button id="open-sidebar-btn" class="open-arrow" style="display: none;">→</button>
 
 <!-- onlineBooking-section  -->
@@ -267,44 +275,41 @@
 </div> <!-- end of availability-section -->
 
 
+<!-- Upcoming Hours -->
+<section id="upcomingHours-section">
+  <h3>Upcoming Hours</h3>
 
-<!-- upcoming-hours  -->
-
-<div id="upcomingHours-section" >
- <h3>Upcoming Hours </h3>
- 
- <button id="save-upcoming-hours-btn" class="long-save-btn">Save Upcoming Hours</button><div class="week-label">This Week</div>
-
-
-<!--Calendar -->
-
+  <button id="save-upcoming-hours-btn" class="long-save-btn">Save Upcoming Hours</button>
+  <div class="week-label">This Week</div>
 
 <div class="calendar-wrapper">
   <div class="calendar-container">
-        <div class="calendar-header">
-            <button id="prevMonth" class="nav-button">&lt;</button>
-            <div id="monthYear"></div>
-            <button id="nextMonth" class="nav-button">&gt;</button>
-        </div>
 
-
-        <div class="weekdays-grid">
-            <div>Sun</div>
-            <div>Mon</div>
-            <div>Tue</div>
-            <div>Wed</div>
-            <div>Thu</div>
-            <div>Fri</div>
-            <div>Sat</div>
-        </div>
-
-        <div id="calendarDays" class="days-grid">
-            <!-- Calendar days will be generated here by JavaScript -->
-
-            
-        </div>
+    <!-- Month title + nav -->
+    <div class="calendar-header">
+      <button id="uh-prev" class="nav-button">‹</button>
+      <div id="uh-monthYear"></div>
+      <button id="uh-next" class="nav-button">›</button>
     </div>
+
+    <!-- Weekday labels -->
+    <div class="weekdays-grid">
+      <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div>
+      <div>Thu</div><div>Fri</div><div>Sat</div>
     </div>
+
+    <!-- Days go here -->
+    <div id="uh-days" class="days-grid"></div>
+  </div>
+</div>
+
+
+
+
+
+
+
+    
     
 <div id="availability-summary-list" style="margin-top: 20px;">
   <h4>Upcoming Availability</h4>
@@ -314,10 +319,19 @@
 </div>
 
   <!-- Popup -->
+
+
+
+  
   <div id="availability-popup" class="popup-add-business" style="display: none;">
-    <div class="popup-content">
-      <span id="popup-close">&times;</span>
-      <h3 id="popup-date-label"></h3>
+    <div class="business-section-header">
+      <div class="spacer"></div>
+      <h2 id="popup-title" class="section-title">Available Hour</h2>
+        <span id="popup-close" style="float:right; border:none; background:none; font-size:18px; cursor: pointer;">&times;</span>
+    </div>
+    
+<div class="popup-content">
+  <h3 id="popup-date-label"></h3>
     
 <div class="time-row current-day-times">
  
@@ -334,8 +348,8 @@
  </div>
 </div>
 </div>
-   <button id="save-upcoming-day-availability">Save</button>
-    </div>
+    <button id="save-upcoming-day-availability" class="add-business-button">Save</button>
+</div>
   </div>
 
 
@@ -696,6 +710,152 @@
     <span>Menu</span>
   </a>
 </nav>
+
+<script>
+(() => {
+  const monthYear = document.getElementById('uh-monthYear');
+  const grid      = document.getElementById('uh-days');
+  const prevBtn   = document.getElementById('uh-prev');
+  const nextBtn   = document.getElementById('uh-next');
+
+  if (!monthYear || !grid || !prevBtn || !nextBtn) return;
+
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  let viewDate = new Date(); // start at today
+
+  function renderCalendar() {
+    const y = viewDate.getFullYear();
+    const m = viewDate.getMonth();
+
+    monthYear.textContent = viewDate.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+    grid.innerHTML = '';
+
+    const first    = new Date(y, m, 1);
+    const startDoW = first.getDay();                  // 0..6 (Sun..Sat)
+    const daysInM  = new Date(y, m + 1, 0).getDate(); // last day of month
+
+    // leading empties
+    for (let i = 0; i < startDoW; i++) {
+      const empty = document.createElement('div');
+      empty.className = 'day-cell empty';
+      grid.appendChild(empty);
+    }
+
+    // actual days
+    const today = new Date(); today.setHours(0,0,0,0);
+
+    for (let d = 1; d <= daysInM; d++) {
+      const cell  = document.createElement('div');
+      cell.className = 'day-cell';
+
+      // ISO date for this cell
+      const iso = `${y}-${pad2(m + 1)}-${pad2(d)}`;
+      cell.dataset.iso = iso;
+
+      const inner = document.createElement('div');
+      inner.className = 'day-inner';
+      inner.textContent = d;
+      cell.appendChild(inner);
+
+      // highlight today
+      if (d === today.getDate() && m === today.getMonth() && y === today.getFullYear()) {
+        cell.classList.add('current-day');
+      }
+
+      // click -> open popup + preselect times
+      cell.addEventListener('click', () => {
+        grid.querySelectorAll('.day-cell.selected').forEach(c => c.classList.remove('selected'));
+        cell.classList.add('selected');
+
+        if (typeof openAvailabilityPopup === 'function') {
+          openAvailabilityPopup(iso);   // <-- this populates the selects & preselects saved times
+        }
+      });
+
+      grid.appendChild(cell);
+    }
+  }
+
+  prevBtn.addEventListener('click', () => { viewDate.setMonth(viewDate.getMonth() - 1); renderCalendar(); });
+  nextBtn.addEventListener('click', () => { viewDate.setMonth(viewDate.getMonth() + 1); renderCalendar(); });
+
+  renderCalendar();
+})();
+</script>
+
+<script>
+(() => {
+  const monthYear = document.getElementById('uh-monthYear');
+  const grid      = document.getElementById('uh-days');
+  const prevBtn   = document.getElementById('uh-prev');
+  const nextBtn   = document.getElementById('uh-next');
+
+  if (!monthYear || !grid || !prevBtn || !nextBtn) return;
+
+  let viewDate = new Date(); // start at today
+
+  function renderCalendar() {
+    const y = viewDate.getFullYear();
+    const m = viewDate.getMonth();
+
+    monthYear.textContent = viewDate.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+    grid.innerHTML = '';
+
+    const first   = new Date(y, m, 1);
+    const startDoW = first.getDay();                   // 0..6 (Sun..Sat)
+    const daysInM  = new Date(y, m + 1, 0).getDate();  // last day of month
+
+    // leading empties
+    for (let i = 0; i < startDoW; i++) {
+      const empty = document.createElement('div');
+      empty.className = 'day-cell empty';
+      grid.appendChild(empty);
+    }
+
+    // actual days
+    const today = new Date();
+    for (let d = 1; d <= daysInM; d++) {
+      const cell  = document.createElement('div');
+      cell.className = 'day-cell';
+      const inner = document.createElement('div');
+      inner.className = 'day-inner';
+      inner.textContent = d;
+      cell.appendChild(inner);
+
+      // highlight today
+      if (
+        d === today.getDate() &&
+        m === today.getMonth() &&
+        y === today.getFullYear()
+      ) {
+        cell.classList.add('current-day');
+      }
+
+      // example click behavior
+      cell.addEventListener('click', () => {
+        grid.querySelectorAll('.day-cell.selected').forEach(c => c.classList.remove('selected'));
+        cell.classList.add('selected');
+        // TODO: show/edit availability for this date
+      });
+
+      grid.appendChild(cell);
+    }
+  }
+
+  prevBtn.addEventListener('click', () => { viewDate.setMonth(viewDate.getMonth() - 1); renderCalendar(); });
+  nextBtn.addEventListener('click', () => { viewDate.setMonth(viewDate.getMonth() + 1); renderCalendar(); });
+
+  renderCalendar();
+})();
+</script>
+
+
+
+
+
+
+
 <script>
   document.addEventListener("DOMContentLoaded", () => {
     const path = window.location.pathname.split("/").pop(); // get current page like 'calendar.html'
@@ -711,6 +871,7 @@
 </script>
 
 
+<div id="sidebar-overlay" aria-hidden="true"></div>
 
     <script src="/qassets/js/availability.js"></script>
   </body>
