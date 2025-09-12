@@ -723,33 +723,31 @@ function renderAppointmentsOnGrid(appointments, maps = {}) {
       ? `<ul class="appt-services">${services.map(s => `<li>${s}</li>`).join("")}</ul>`
       : `<ul class="appt-services"><li>(No service)</li></ul>`;
 
- const card = document.createElement("div");
-card.className = "appointment-card";
-card.dataset.id = String(_id); // ✅ give the card the record id
+    const card = document.createElement("div");
+    card.className = "appointment-card";
+    card.style.position = "absolute";
+    card.style.top  = `${Math.round(topOffset)}px`;
+    card.style.left = `calc(${dayIndex} * 14.28%)`;
 
-card.style.position = "absolute";
-card.style.top  = `${Math.round(topOffset)}px`;
-card.style.left = `calc(${dayIndex} * 14.28%)`; // your 7-column layout
-// (width is handled by your .appointment-card CSS)
+    card.innerHTML = `
+      <div class="appt-time"><strong>${startLabel} – ${endLabel}</strong></div>
+      <div class="appt-client">${(clientName || "").trim() || "(No client)"}</div>
+      ${servicesHtml}
+    `;
 
-card.innerHTML = `
-  <div class="appt-time"><strong>${startLabel} – ${endLabel}</strong></div>
-  <div class="appt-client">${(clientName || "").trim() || "(No client)"}</div>
-  ${servicesHtml}
-`;
+    card.addEventListener("click", () => {
+      openAppointmentPopup({
+        _id,
+        time,
+        date,
+        duration,
+        businessId,
+        clientId,
+        serviceId: serviceIds[0] || null
+      });
+    });
 
-// click → open editor for this id
-card.addEventListener("click", () => {
-  if (typeof openAppointmentEditor === "function") {
-    openAppointmentEditor(String(_id));
-  } else {
-    // fallback: just open the blank popup if editor isn’t wired
-    openAppointmentPopup();
-  }
-});
-
-grid.appendChild(card);
-
+    grid.appendChild(card);
   });
 }
 
@@ -1235,126 +1233,6 @@ function closeAppointmentPopup() {
   if (popup)   popup.style.display = "none";
   if (overlay) overlay.style.display = "none";
   document.body.classList.remove("popup-open");
-}
-// ===== helpers to avoid race conditions when opening in edit mode =====
-async function waitFor(predicateFn, timeout = 2000, interval = 50) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < timeout) {
-    try { if (predicateFn()) return true; } catch {}
-    await new Promise(r => setTimeout(r, interval));
-  }
-  return false;
-}
-async function waitForOptions(selectEl, min = 2, timeout = 2000) {
-  return waitFor(() => selectEl && selectEl.options && selectEl.options.length >= min, timeout);
-}
-
-// ====== EDIT APPOINTMENT (click card → open popup prefilled) ======
-
-// 1) Delegate clicks on dynamically-rendered appointment cards
-document.addEventListener('click', (e) => {
-  const card = e.target.closest('.appointment-card[data-id]');
-  if (!card) return;
-  e.preventDefault();
-  openAppointmentEditor(card.dataset.id);
-});
-
-// 2) Open the popup in EDIT mode and prefill fields
-async function openAppointmentEditor(apptId) {
-  try {
-    const res = await fetch(`${API_URL('Appointment')}/${encodeURIComponent(apptId)}?ts=${Date.now()}`, {
-      credentials: 'include', cache: 'no-store'
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const rec = await res.json();
-    const v = rec?.values || {};
-
-    const idOf = (x) => (x && typeof x === 'object') ? (x._id || x.id || '') : (x || '');
-
-    const businessId = idOf(v['Business']);
-    const calendarId = idOf(v['Calendar']);
-    const serviceId  = idOf((v['Service(s)'] || [])[0] || v['Service']);
-    const clientId   = idOf(v['Client']);
-    const date       = (v['Date'] || '').slice(0, 10);
-    const time24     = v['Time'] || '';
-    const duration   = Number(v['Duration'] ?? v.duration ?? 0) || '';
-    const note       = v['Note'] || '';
-
-    // show popup and ensure the Business dropdown is populated
-    if (typeof openAppointmentPopup === 'function') await openAppointmentPopup();
-
-    // mark edit mode so your submit handler PATCHes instead of POSTing
-    window.currentEditAppointmentId = apptId;
-
-    const apptBizSel = document.getElementById('appointment-business');
-    const svcSel     = document.getElementById('appointment-service');
-    const cliSel     = document.getElementById('appointment-client');
-
-    // Wait until businesses are loaded, then set value
-    if (apptBizSel) {
-      await waitForOptions(apptBizSel, 2, 3000);
-      apptBizSel.value = String(businessId || '');
-    }
-
-    // Load services/clients for that business, then wait for them to populate
-    if (businessId) {
-      await Promise.all([
-        typeof loadAppointmentServices === 'function'
-          ? loadAppointmentServices(String(businessId))
-          : Promise.resolve(),
-        typeof loadAppointmentClients === 'function'
-          ? loadAppointmentClients(String(businessId), { selectClientId: String(clientId || '') })
-          : Promise.resolve()
-      ]);
-    }
-
-    // Wait for service list and select the right one
-    if (svcSel) {
-      await waitForOptions(svcSel, 2, 3000);
-      svcSel.value = String(serviceId || '');
-      // make sure the selected option carries the calendar id (some save flows rely on it)
-      const opt = svcSel.options[svcSel.selectedIndex];
-      if (opt && calendarId && !opt.dataset.calendarId) opt.dataset.calendarId = String(calendarId);
-    }
-
-    // Client (loadAppointmentClients may already select it, but set explicitly too)
-    if (cliSel) {
-      await waitForOptions(cliSel, 2, 3000);
-      if (clientId) cliSel.value = String(clientId);
-    }
-
-    // Scalars
-    const dateEl = document.getElementById('appointment-date');
-    if (dateEl) dateEl.value = date;
-
-    const timeEl = document.getElementById('appointment-time');
-    if (timeEl) timeEl.value = to12h(time24);
-
-    const durEl  = document.getElementById('appointment-duration');
-    if (durEl)  durEl.value = duration;
-
-    const noteEl = document.getElementById('appointment-note');
-    if (noteEl) noteEl.value = note;
-
-    // button label
-    const submitBtn = document.querySelector('#create-appointment-form button[type="submit"]');
-    if (submitBtn) submitBtn.textContent = 'Update Appointment';
-
-  } catch (err) {
-    console.error('Failed to open appointment in edit mode:', err);
-    alert('Could not load that appointment.');
-  }
-}
-
-// 3) helper: convert "HH:MM" (24h) → "h:MM AM/PM" for your time input
-function to12h(hhmm) {
-  if (!hhmm) return '';
-  const [hStr, mStr='0'] = String(hhmm).split(':');
-  let h = parseInt(hStr, 10), m = parseInt(mStr, 10);
-  if (Number.isNaN(h)) return hhmm;
-  const ap = h >= 12 ? 'PM' : 'AM';
-  h = h % 12; if (h === 0) h = 12;
-  return `${h}:${String(m).padStart(2,'0')} ${ap}`;
 }
 
 

@@ -12,7 +12,7 @@
     <section class="header-group-container">
       <div class="group left-group">Suite Seat</div>
    <div class="group right-group"> 
-  <button id="open-login-popup-btn">Login</button>
+  <button class="blk-btn" id="open-login-popup-btn">Login</button>
 </div>
 </section>
 
@@ -27,61 +27,55 @@
       <option value="">-- Choose Business --</option>
     </select> 
 <br>
-    <button onclick="openClientListPopup()">View All Clients</button>
+    <button class= "simple-btn" onclick="openClientListPopup()">View All Clients</button>
   </section>
   
+  <div class="right-section">
+  <button class= "blk-btn" onclick="openClientPopup()">+ New Client</button>
+<button class= "blk-btn" onclick="openAppointmentPopup()">+ New Appointment</button>
 
+
+
+</div>
   <br>
                                             <!-- Date Header -->
                                              
-  <div class="date-header">
-    
-    
-    <div class="left-section">
-         <button id="today-btn">Today</button> 
-      <button id="prev-week">&lt;</button>
-  <button id="next-week">&gt;</button>
+ <!-- Date Header (unchanged) -->
+<div class="date-header">
+  <button class="simple-btn" id="today-btn">This Week</button>
+
+  <div class="middle-section">
+    <div class="month-row">
+      <button id="prev-week" class="nav-btn" aria-label="Previous month">‹</button>
+      <h4 id="month-year">September 2025</h4>
+      <button id="next-week" class="nav-btn" aria-label="Next month">›</button>
     </div>
-    
-   <div class="middle-section">
-  <h4 id="month-year"></h4>
-  <div id="week-offset-label" style="font-weight: normal; color: #666; margin-top: 5px;"></div>
-
- 
-</div>
-    
-   <div class="right-section">
-  <button onclick="openClientPopup()">+ New Client</button>
-<button onclick="openAppointmentPopup()">+ New Appointment</button>
-
-
-
-</div>
+    <div id="week-offset-label" class="sub"></div>
   </div>
-    
-    <!-- Day of Week Section -->
-<div class="week-days">
-  <div class="day-column empty"></div> <!-- spacer to match hour column -->
-  <div class="day-column"><div>Sun</div><div class="day-date" data-day="0">22</div></div>
-  <div class="day-column"><div>Mon</div><div class="day-date" data-day="1">23</div></div>
-  <div class="day-column"><div>Tue</div><div class="day-date" data-day="2">24</div></div>
-  <div class="day-column"><div>Wed</div><div class="day-date" data-day="3">25</div></div>
-  <div class="day-column"><div>Thu</div><div class="day-date" data-day="4">26</div></div>
-  <div class="day-column"><div>Fri</div><div class="day-date" data-day="5">27</div></div>
-  <div class="day-column"><div>Sat</div><div class="day-date" data-day="6">28</div></div>
 </div>
 
-               <!-- Hour Grid -->
-   <div class="calendar-wrapper">            
-  <div class="calendar-grid">
-  <div class="hour-column"><!-- JS will inject times like 12AM, 1AM, ..., 11PM -->
-
+<!-- NEW unified scroller -->
+<div class="week-scroller">
+  <!-- Day of Week Section -->
+  <div class="week-days">
+    <div class="day-column empty"></div>
+    <div class="day-column"><div>Sun</div><div class="day-date" data-day="0">22</div></div>
+    <div class="day-column"><div>Mon</div><div class="day-date" data-day="1">23</div></div>
+    <div class="day-column"><div>Tue</div><div class="day-date" data-day="2">24</div></div>
+    <div class="day-column"><div>Wed</div><div class="day-date" data-day="3">25</div></div>
+    <div class="day-column"><div>Thu</div><div class="day-date" data-day="4">26</div></div>
+    <div class="day-column"><div>Fri</div><div class="day-date" data-day="5">27</div></div>
+    <div class="day-column"><div>Sat</div><div class="day-date" data-day="6">28</div></div>
   </div>
-  <div class="time-slots-container"><!-- JS will inject 7 columns (Sun–Sat) with 15min lines -->
-     </div>
-</div>
-</div> 
 
+  <!-- Hour Grid -->
+  <div class="calendar-wrapper">            
+    <div class="calendar-grid">
+      <div class="hour-column"></div>
+      <div class="time-slots-container"></div>
+    </div>
+  </div>
+</div>
 
 
                            <!-- Popup -->

@@ -61,41 +61,65 @@
    
 
 
-
+<!-- Desktop burger (shows only when sidebar is collapsed) -->
+ <div> 
+<button id="open-sidebar-btn-desktop"
+        class="floating-burger"
+        aria-label="Open sidebar"
+        title="Open menu">
+  <span></span><span></span><span></span>
+</button>
+</div>
                          <!-- whole bottom sections under Header  -->
  <div class="container">
-<!-- Your sidebar (keep your existing content/IDs; just make sure the close button is inside) -->
-<aside id="calendar-sidebar" aria-hidden="true">
-  <button id="close-sidebar-btn" class="close-drawer" aria-label="Close menu">❮</button>
+
+
+
+
+
+
+<!-- Sidebar (one instance only) -->
+<aside id="calendar-sidebar">
+  <div class="sidebar-header">
+    <!-- Desktop hide button -->
+    <button id="collapse-sidebar-btn" type="button" class="icon-btn" aria-label="Hide sidebar">❮</button>
+
+  
+
+    <!-- Mobile close arrow (shows only on small screens via CSS) -->
+    <button id="close-sidebar-btn" type="button" class="close-arrow" aria-label="Close sidebar">❮</button>
+  </div>
 
   <div class="sidebar-inner">
     <div class="chooseBusiness">
-      <div class="calendar-label">
-        <h3>Calendar</h3>
-      </div>
+      <div class="calendar-label"><h3>Calendar</h3></div>
 
-      <div class="form-group" style="margin-top: 20px;">
-        <label for="dropdown-category-business">Choose Business</label><br>
+      <div class="form-group" style="margin-top:20px;">
+        <label for="dropdown-category-business">Choose Business</label>
         <select id="dropdown-category-business">
           <option value="">-- Select --</option>
         </select>
       </div>
 
-      <div class="form-group" style="margin-top: 20px;">
-        <label for="dropdown-availability-calendar">Choose Calendar</label><br>
+      <div class="form-group" style="margin-top:20px;">
+        <label for="dropdown-availability-calendar">Choose Calendar</label>
         <select id="dropdown-availability-calendar" disabled>
           <option value="">-- Select --</option>
         </select>
       </div>
     </div>
 
-    <!-- Option Tabs -->
-    <div class="calendarOptions" data-target="onlineBooking-section"><h5>Online Booking Settings</h5></div>
-    <div class="calendarOptions" data-target="availability-section"><h5>Manage Availability</h5></div>
-    <div class="calendarOptions" data-target="upcomingHours-section"><h5>Adjust Upcoming Hours</h5></div>
-    <div class="calendarOptions" data-target="vacation-section"><h5>Manage Vacation Time</h5></div>
+    <nav class="side-nav">
+      <div class="calendarOptions" data-icon="🛒" data-target="onlineBooking-section" role="button" tabindex="0"><h5>Online Booking Settings</h5></div>
+      <div class="calendarOptions" data-icon="🕒" data-target="availability-section" role="button" tabindex="0"><h5>Manage Availability</h5></div>
+      <div class="calendarOptions" data-icon="📅" data-target="upcomingHours-section" role="button" tabindex="0"><h5>Adjust Upcoming Hours</h5></div>
+      <div class="calendarOptions" data-icon="🌴" data-target="vacation-section" role="button" tabindex="0"><h5>Manage Vacation Time</h5></div>
+    </nav>
   </div>
 </aside>
+
+<!-- (optional, for mobile overlay) place once on the page -->
+<div id="sidebar-overlay" aria-hidden="true"></div>
 
 
  <div class="content-area">     

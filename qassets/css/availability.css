@@ -53,6 +53,310 @@ main {
   font-weight: bold;
 }
 
+/* Theme tokens for the sidebar */
+#calendar-sidebar{
+  --bg: #ffffff;
+  --border: #e9edf2;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --accent: #EFB37C;
+}
+
+/* Sidebar container (desktop look) */
+#calendar-sidebar{
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+}
+#calendar-sidebar .sidebar-inner{
+  padding: 16px;
+  display: grid;
+  gap: 18px;
+}
+
+/* tighter vertical rhythm in the sidebar */
+#calendar-sidebar .sidebar-inner{ gap:12px; }
+#calendar-sidebar .chooseBusiness{ gap:12px; margin-bottom:8px; }
+
+/* form spacing */
+#calendar-sidebar .form-group{
+  margin: 8px 0 0;
+}
+/* Label + selects */
+#calendar-sidebar .calendar-label h3{
+  margin: 0 0 8px;
+  font-size: 16px;
+  letter-spacing: .2px;
+}
+#calendar-sidebar .form-group label{
+  display: block;
+  font-size: 12px;
+color: #6b7280;
+  margin: 0 0 4px;
+}
+#calendar-sidebar .form-group select{
+  width: 100%;
+   padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 14px;
+  outline: none;
+  transition: box-shadow .15s ease, border-color .15s ease;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #999 50%),
+    linear-gradient(135deg, #999 50%, transparent 50%),
+    linear-gradient(to right, transparent, transparent);
+  background-position:
+    calc(100% - 16px) calc(50% - 3px),
+    calc(100% - 11px) calc(50% - 3px),
+    100% 0;
+  background-size: 6px 6px, 6px 6px, 2.5em 100%;
+  background-repeat: no-repeat;
+}
+#calendar-sidebar .form-group select:focus{
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(239,179,124,.25);
+}
+
+/* Side nav layout */
+/* menu spacing under the selects */
+#calendar-sidebar .side-nav{
+  margin-top: 8px;
+  gap: 8px;
+}
+
+/* === Pretty menu tiles === */
+#calendar-sidebar .calendarOptions{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  transition: background .15s ease, box-shadow .15s ease, transform .05s ease;
+  user-select: none;
+}
+#calendar-sidebar .calendarOptions h5{
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+#calendar-sidebar .calendarOptions::before{
+  content: attr(data-icon);
+  font-size: 18px;
+  opacity: .9;
+}
+#calendar-sidebar .calendarOptions::after{
+  content: "›";
+  font-weight: 700;
+  opacity: .4;
+}
+
+/* hover/active/focus */
+#calendar-sidebar .calendarOptions:hover{
+  background: #fff9f2;
+  box-shadow: 0 6px 16px rgba(0,0,0,.08);
+  transform: translateY(-1px);
+}
+#calendar-sidebar .calendarOptions:active{
+  transform: translateY(0);
+}
+#calendar-sidebar .calendarOptions.active{
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #111;
+}
+#calendar-sidebar .calendarOptions.active::after{
+  opacity: .8;
+}
+
+/* style for the tiny arrow button */
+.icon-btn{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,.06);
+  cursor: pointer;
+}
+
+/* Arrow visible only when viewport > 500px */
+#collapse-sidebar-btn{ display: none; }
+@media (min-width: 701px){
+  #collapse-sidebar-btn{ display: inline-flex; }
+}
+
+/* When the sidebar is collapsed on desktop, hide the arrow and show the reopen button */
+body.sidebar-collapsed #collapse-sidebar-btn{ display: none; }
+
+/* Optional: show the same "open-sidebar-btn" as a small fixed tab when collapsed on desktop */
+@media (min-width: 701px){
+  body.sidebar-collapsed #open-sidebar-btn{
+    display: inline-flex;
+    position: fixed;
+    left: 10px;
+    top: calc(var(--header-h, 60px) + 10px);
+    z-index: 1100;
+  }
+}
+
+/* Hidden by default */
+#close-sidebar-btn { display:none; }
+
+/* Drawer + arrow only on small screens */
+@media (max-width:500px){
+  /* your drawer baseline (keep yours if already set) */
+  #calendar-sidebar{
+    position:fixed; top:0; left:0; height:100vh;
+    width:min(92vw,360px); max-width:92vw;
+    background:#fff; box-shadow:0 10px 30px rgba(0,0,0,.2);
+    transform:translateX(-100%); transition:transform 200ms ease;
+    z-index:1000;
+  }
+  #calendar-sidebar.is-open{ transform:translateX(0); }
+
+  /* show + position the close arrow when open */
+  #calendar-sidebar.is-open #close-sidebar-btn{
+    display:block;
+    position:absolute;
+    top:10px;
+    right:-40px;            /* outside the edge; use 10px if you want it inside */
+    width:36px; height:36px;
+    line-height:36px; text-align:center;
+    border-radius:18px;
+    background:#fff;
+    border:1px solid rgba(0,0,0,.12);
+    box-shadow:0 2px 8px rgba(0,0,0,.25);
+    cursor:pointer;
+    z-index:1001;           /* above overlay */
+  }
+}
+
+/* Overlay should sit under arrow */
+#sidebar-overlay{ z-index:999; }
+/* Hidden by default on desktop */
+#close-sidebar-btn { display:none; }
+
+/* Sidebar header row */
+#calendar-sidebar .sidebar-header{
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+  padding:12px 12px;
+  border-bottom:1px solid #eee;
+  background:#fff;
+}
+
+/* Title style (optional) */
+#calendar-sidebar .sidebar-title{
+  font-size:1.25rem;
+  margin:0;
+}
+
+/* Small screens: drawer + sticky header + show arrow */
+@media (max-width:500px){
+  #calendar-sidebar{
+    position:fixed; top:0; left:0; height:100vh;
+    width:min(92vw,360px); max-width:92vw;
+    background:#fff; box-shadow:0 10px 30px rgba(0,0,0,.2);
+    transform:translateX(-100%); transition:transform 200ms ease;
+    z-index:1000;
+    overflow:auto;
+  }
+  #calendar-sidebar.is-open{ transform:translateX(0); }
+
+  /* sticky header so the arrow stays visible when sidebar scrolls */
+  #calendar-sidebar .sidebar-header{
+    position:sticky; top:0; z-index:1;
+  }
+
+  /* show the arrow and keep it INSIDE the header (no overlap on calendar) */
+  #calendar-sidebar.is-open #close-sidebar-btn{
+    display:inline-flex;
+    align-items:center; justify-content:center;
+    width:36px; height:36px;
+    border-radius:18px;
+    border:1px solid rgba(0,0,0,.12);
+    box-shadow:0 2px 8px rgba(0,0,0,.12);
+    background:#fff; cursor:pointer;
+    /* IMPORTANT: do NOT absolutely position it outside */
+    position:static;
+  }
+}
+/* Desktop-only floating burger (hidden by default) */
+.floating-burger{
+  
+  /* place it below your header — tweak as needed */
+  top: 84px;         /* or: calc(var(--header-h, 64px) + 20px) */
+  left: 16px;
+  width: 36px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 1100;
+  display: none;
+}
+.floating-burger span{
+  display: block;
+  height: 3px;
+  margin: 5px 0;
+  background: #333;
+  border-radius: 2px;
+}
+
+/* Show this burger only on desktop AND only when the sidebar is collapsed */
+@media (min-width: 701px){
+  body.sidebar-collapsed #open-sidebar-btn-desktop{
+    display: block;
+  }
+}
+/* Desktop rail lives under the header, never overlays it */
+#desktop-rail{
+  display: none;                 /* default hidden */
+  position: sticky;              /* sticks under header as you scroll */
+  top: 0;                        /* just below normal flow (header not fixed) */
+  z-index: 5;
+  padding: 12px 0 0 18px;        /* space from left/top */
+}
+
+/* Show only on desktop when the sidebar is collapsed */
+@media (min-width: 701px){
+  body.sidebar-collapsed #desktop-rail{ display: flex; align-items: center; }
+}
+
+/* Desktop burger look */
+#desktop-open-sidebar{
+  width: 36px; height: 28px;
+  border: 0; background: transparent; cursor: pointer;
+}
+#desktop-open-sidebar span{
+  display:block; height:3px; margin:5px 0; background:#333; border-radius:2px;
+}
+
+/* Never show the desktop rail on small screens */
+@media (max-width: 500px){ #desktop-rail{ display:none !important; } }
+
+/* Overlay just below the drawer */
+#sidebar-overlay{ z-index:999; }
+
+@media (min-width: 701px){
+  body.sidebar-collapsed #calendar-sidebar { display: none; }
+  body.sidebar-collapsed .content-area { width: 100%; }
+}
+
+/* Keep your mobile overlay rules as-is; these only affect look */
+
+
 /* Desktop (default): sidebar can live inline */
 #calendar-sidebar {
   /* keep whatever you already have for desktop */
@@ -60,7 +364,7 @@ main {
 }
 
 /* Overlay mode on small screens */
-@media (max-width: 500px) {
+@media (max-width: 700px) {
   #calendar-sidebar {
     position: fixed;        /* float over content */
     top: 0;
@@ -126,7 +430,7 @@ body.no-scroll { overflow: hidden; }
 }
 
 /* Show rail on small screens */
-@media (max-width: 500px){
+@media (max-width: 700px){
   #mobile-rail{ display: flex; }
 }
 
@@ -149,7 +453,7 @@ body.no-scroll { overflow: hidden; }
 }
 
 /* Make space so content isn't hidden under the rail on mobile */
-@media (max-width: 500px){
+@media (max-width: 700px){
   /* keep just a tiny offset so text doesn't touch the rail */
   .content-area{ padding-top: -20px; }   /* use 0 if you want it flush */
 }

@@ -1,3 +1,124 @@
+:root{
+  --g1:#ffbf4d;   /* gold   */
+  --g2:#ff6a6a;   /* coral  */
+  --g3:#ff4d9d;   /* pink   */
+  --btn-bg:#ecedf1; /* inner bg (dark). Change for light themes */
+  --ring: rgba(255, 109, 109, .35);
+}
+
+/* pill container with gradient border using double backgrounds */
+.pill-outline{
+  --radius: 9999px;
+  --pad-y: .55rem;
+  --pad-x: 1.05rem;
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  padding: var(--pad-y) var(--pad-x);
+  border-radius: var(--radius);
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--btn-bg), var(--btn-bg)) padding-box,
+    linear-gradient(135deg, var(--g1), var(--g2) 55%, var(--g3)) border-box;
+  cursor: pointer;
+  user-select: none;
+color:rgb(15, 15, 15);
+  /* type */
+  font-weight: 800;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+
+  /* motion/shine */
+  transition: transform .06s ease, box-shadow .25s ease, filter .25s ease;
+  box-shadow: 0 1px 0 rgba(0,0,0,.05), 0 8px 18px rgba(0,0,0,.14);
+}
+
+/* gradient text */
+.pill-label{
+  background: linear-gradient(135deg, var(--g1), var(--g2) 55%, var(--g3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1;
+}
+
+/* icon inherits gradient via currentColor trick */
+.pill-icon{
+  width: 1.1em; height: 1.1em;
+  color: transparent;
+  background: linear-gradient(135deg, var(--g1), var(--g2) 55%, var(--g3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  flex: 0 0 auto;
+}
+
+/* hover/focus/active */
+.pill-outline:hover{
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 12px rgba(255,191,77,.25),
+    0 0 22px rgba(255,77,157,.25),
+    0 10px 20px rgba(0,0,0,.18);
+  filter: saturate(1.1);
+}
+.pill-outline:active{ transform: translateY(0); }
+
+.pill-outline:focus-visible{
+  outline: none;
+  box-shadow:
+    0 0 0 4px var(--ring),
+    0 8px 18px rgba(0,0,0,.14);
+}
+
+/* disabled state */
+.pill-outline[disabled]{
+  opacity:.55; cursor:not-allowed; filter:grayscale(.2);
+}
+
+/* size tweaks */
+.pill-outline.pill-sm{ --pad-y:.4rem; --pad-x:.85rem; font-size: .9rem; }
+.pill-outline.pill-lg{ --pad-y:.75rem; --pad-x:1.25rem; font-size: 1.05rem; }
+
+
+.simple-btn
+{
+    background-color: white;
+  border: 2px solid #EFB37C;
+  color: rgb(17, 17, 17);
+  padding: 4px 14px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 12px;
+  border-radius:4px;
+  margin:5px;
+   box-shadow: 0 8px 16px 0 rgba(0,0,0,0.2), 0 6px 20px 0 rgba(0,0,0,0.19);
+}
+
+.blk-btn:hover{
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 12px rgba(255,191,77,.25),
+    0 0 22px rgba(255,77,157,.25),
+    0 10px 20px rgba(0,0,0,.18);
+  filter: saturate(1.1);
+}
+.blk-btn{
+    background-color: #0c0c0c;
+ 
+  color: #f1f0ee;
+  padding: 4px 14px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 12px;
+  border-radius:4px;
+  margin:5px;
+}
+
+
 html, body {
   height: 100%;
   min-height: 100vh;
@@ -21,6 +142,8 @@ main {
 .business-holder  {
   padding: 10px; 
 }
+
+
 
 /* Header Styling */
 .header {
@@ -192,6 +315,100 @@ body.popup-open {
   margin: 0;
 }
 
+/* ---------- date header: responsive ---------- */
+
+/* slightly tighten things on tablets */
+@media (max-width: 900px) {
+  .date-header { gap: 8px 12px; }
+  .date-header button { padding: 6px 10px; }
+  #month-year { font-size: 18px; }
+}
+
+/* phones: stack the layout */
+@media (max-width: 600px) {
+  .date-header {
+    flex-wrap: wrap;              /* allow wrapping */
+    padding: 8px 12px;
+    gap: 8px 12px;
+  }
+
+  /* month/year sits on its own full-width row */
+  .date-header .middle-section {
+    order: 0;
+    flex: 0 0 100%;
+    align-items: center;
+    text-align: center;
+  }
+
+  /* nav buttons on the left, action buttons on the right */
+  .date-header .left-section {
+    order: 1;
+    flex: 1 1 50%;
+    justify-content: flex-start;
+  }
+  .date-header .right-section {
+    order: 2;
+    flex: 1 1 50%;
+    justify-content: flex-end;
+  }
+
+  /* keep button text on one line and make them compact */
+  .date-header .right-section button,
+  .date-header .left-section  button {
+    white-space: nowrap;
+    padding: 6px 10px;
+  }
+}
+
+/* extra small screens: put the right section on its own row centered */
+@media (max-width: 380px) {
+  .date-header .right-section {
+    flex-basis: 100%;
+    justify-content: center;
+  }
+}
+/* center the month and put arrows on the same line */
+.date-header .middle-section{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  text-align:center;
+  gap:4px; /* space between month row and the sub-label */
+}
+
+.date-header .month-row{
+  display:flex;
+  align-items:center;
+  gap:12px;            /* space between ‹, month, › */
+}
+
+#month-year{
+  margin:0;
+  font-size:20px;
+  font-weight:700;
+}
+
+/* small round arrow buttons */
+.nav-btn{
+  width:34px;
+  height:34px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid #ddd;
+  border-radius:50%;
+  background:#fff;
+  cursor:pointer;
+  line-height:1;
+  font-size:20px;
+}
+
+/* optional: responsive tweak */
+@media (max-width:600px){
+  #month-year{ font-size:18px; }
+  .nav-btn{ width:30px; height:30px; font-size:18px; }
+}
+
  /* Calendar Grids  */
  .time-slots-container {
   display: grid;
@@ -306,13 +523,11 @@ body.popup-open {
 .day-column {
   border-right: 1px solid #eee;
 }
-
-.calendar-wrapper {
-  max-height: 600px; /* or whatever fits your screen */
-  overflow-y: scroll; 
+.calendar-wrapper{
   width: 100%;
-  overflow-x: auto;
-   padding-bottom: 100px; /* 👈 ADDED: space for footer */
+  max-height: none;     /* was 600px */
+  overflow: visible;    /* was overflow-y: scroll; overflow-x: auto */
+  padding-bottom: 100px;/* keep space for your fixed bottom tab bar */
 }
 
 
@@ -320,7 +535,7 @@ body.popup-open {
 .appointment-card {
   position: absolute;
   width: 14.28%;
-  background: #f5f5f5;
+  background: #efb47c30;
   border: 1px solid #ccc;
   font-size: 12px;
   padding: 4px;
@@ -453,3 +668,35 @@ body.popup-open {
 .appt-services { margin: 6px 0 0; padding-left: 18px; }
 .appt-services li { margin: 2px 0; }
 .appointment-card .appt-time { white-space: nowrap; }      
+
+/* FIT-TO-WIDTH — no horizontal scrolling */
+.week-days{
+  /* hour column + 7 flexible day columns */
+  grid-template-columns: 60px repeat(7, minmax(0, 1fr));
+  min-width: 0;          /* allow shrink */
+}
+
+.calendar-grid{
+  width: 100%;
+  min-width: 0;          /* allow the flex child to shrink */
+}
+
+.time-slots-container{
+  /* 7 flexible day columns that can compress */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.hour-column{
+  width: 60px;           /* keep hour labels fixed */
+  flex: 0 0 60px;
+}
+
+/* If you added these earlier, neutralize them */
+.week-scroller{ overflow-x: visible; }
+.week-days, .calendar-grid{ min-width: 0 !important; }
+@media (max-width: 700px){
+  .day-column { font-size: 13px; }
+  .day-date   { font-size: 11px; }
+  .appointment-card{ font-size: 11px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+}

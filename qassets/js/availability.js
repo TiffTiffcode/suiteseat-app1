@@ -1,4 +1,7 @@
   const API = (type) => `/api/records/${encodeURIComponent(type)}`;
+// Remember last-used selections across page loads
+const LS_BIZ = 'lastBusinessId';
+const LS_CAL = 'lastCalendarId';
 
   
   
@@ -139,53 +142,104 @@ if (loginStatus) {
         alert("Something went wrong.");
       }
     });
+    
   }
 
   //////////////////////////////////////////////////////////////////////////////
                        //Menu Section
 
-  // =========================
-  // BUSINESS DROPDOWN (together)
-  // =========================
-  const bizSel = document.getElementById('dropdown-category-business');
+// =========================
+// BUSINESS DROPDOWN (replace your whole block)
+// =========================
+const bizSel = document.getElementById('dropdown-category-business');
 
-  async function initBusinessDropdown() {
-    await loadBusinessOptions('dropdown-category-business', { placeholder: '-- Select --' });
+async function initBusinessDropdown() {
+  await loadBusinessOptions('dropdown-category-business', { placeholder: '-- Select --' });
 
-    if (bizSel && !bizSel.dataset.bound) {
-      bizSel.addEventListener('change', async () => {
-        sessionStorage.setItem('selectedBusinessId', bizSel.value || '');
-        // Refresh calendars whenever business changes
-        await initCalendarDropdown();
-      });
-      bizSel.dataset.bound = '1';
-    }
+  // Try to restore last-used business
+  const lastBiz = localStorage.getItem(LS_BIZ) || sessionStorage.getItem('selectedBusinessId') || '';
+  if (bizSel && lastBiz && bizSel.querySelector(`option[value="${lastBiz}"]`)) {
+    bizSel.value = lastBiz;
   }
 
-  // =========================
-  // CALENDAR DROPDOWN (together)
-  // =========================
+  if (bizSel && !bizSel.dataset.bound) {
+    bizSel.addEventListener('change', async () => {
+      const v = bizSel.value || '';
+      // Persist both locally
+      localStorage.setItem(LS_BIZ, v);
+      sessionStorage.setItem('selectedBusinessId', v);
+
+      // Business changed → clear remembered calendar (it might not belong)
+      localStorage.removeItem(LS_CAL);
+      sessionStorage.removeItem('selectedAvailabilityCalendarId');
+
+      // Rebuild calendars for this business
+      await initCalendarDropdown();
+    });
+    bizSel.dataset.bound = '1';
+  }
+}
+
+// =========================
+// CALENDAR DROPDOWN (replace your whole block)
+// =========================
+// ==== Calendar dropdown (preselect last used if it still exists) ====
+// --- helpers for saved ids ---
+const getSavedBizId = () =>
+  (typeof bizSel !== 'undefined' && bizSel?.value) ||
+  localStorage.getItem(LS_BIZ) ||
+  sessionStorage.getItem('selectedBusinessId') || '';
+
+const getSavedCalId = () =>
+  localStorage.getItem(LS_CAL) ||
+  sessionStorage.getItem('selectedAvailabilityCalendarId') || '';
+
+// --- robust preselect for the calendar dropdown ---
+async function initCalendarDropdown() {
   const calSel = document.getElementById('dropdown-availability-calendar');
+  if (!calSel) return;
 
-  async function initCalendarDropdown() {
-    const bizId =
-      bizSel?.value ||
-      sessionStorage.getItem('selectedBusinessId') ||
-      '';
+  const bizId = getSavedBizId();
 
-    await loadCalendarOptions(
-      'dropdown-availability-calendar',
-      bizId,
-      { placeholder: '-- Select --', rememberKey: 'selectedAvailabilityCalendarId' }
-    );
+  // (Re)populate options for this business (your function must fill <option>s)
+  await loadCalendarOptions('dropdown-availability-calendar', bizId, {
+    placeholder: '-- Select --'
+  });
 
-    if (calSel && !calSel.dataset.bound) {
-      calSel.addEventListener('change', () => {
-        sessionStorage.setItem('selectedAvailabilityCalendarId', calSel.value || '');
-      });
-      calSel.dataset.bound = '1';
-    }
+  // Try to preselect saved calendar id
+  const wanted = getSavedCalId();
+  const opts = Array.from(calSel.options);
+
+  // Find by value (coerce types + trim) or data-id fallback
+  const match = opts.find(o =>
+    (String(o.value).trim() == String(wanted).trim()) ||
+    (o.dataset && String(o.dataset.id).trim() == String(wanted).trim())
+  );
+
+  if (match && match.value !== '') {
+    calSel.value = match.value;
+    calSel.disabled = false;
+    // Bubble change so listeners (e.g., loadAndGenerateCalendar) run
+    calSel.dispatchEvent(new Event('change', { bubbles: true }));
+  } else {
+    // No valid saved calendar for this business → reset
+    calSel.value = '';
+    calSel.disabled = opts.length <= 1; // keep disabled if only placeholder
   }
+
+  // Save on change (bind once)
+  if (!calSel.dataset.bound) {
+    calSel.addEventListener('change', () => {
+      const v = calSel.value || '';
+      localStorage.setItem(LS_CAL, v);
+      sessionStorage.setItem('selectedAvailabilityCalendarId', v);
+      calSel.disabled = (v === '');
+    });
+    calSel.dataset.bound = '1';
+  }
+}
+
+
 
   // =========================
   // TABS (together)
@@ -236,6 +290,7 @@ const openBtn           = document.getElementById("open-sidebar-btn");
 const closeBtn          = document.getElementById("close-sidebar-btn");
 const calendarContainer = document.querySelector(".calendar-container");
 const overlay           = document.getElementById("sidebar-overlay");
+const collapseBtn = document.getElementById('collapse-sidebar-btn');
 
 function isMobile() {
   return window.matchMedia("(max-width: 500px)").matches;
@@ -251,10 +306,12 @@ function openSidebar() {
   } else {
     sidebar.classList.remove("hidden");
     calendarContainer?.classList.remove("full-width");
+   document.body.classList.remove("sidebar-collapsed"); 
   }
 
-  if (openBtn)  openBtn.style.display = "none";
-  if (closeBtn) closeBtn.style.display = "block";
+if (openBtn)  openBtn.style.display = "none";
+if (closeBtn) closeBtn.style.display = isMobile() ? "block" : "none";
+
 
   openBtn?.setAttribute("aria-expanded", "true");
   sidebar?.setAttribute("aria-hidden", "false");
@@ -272,8 +329,8 @@ function closeSidebar() {
     calendarContainer?.classList.add("full-width");
   }
 
-  if (openBtn)  openBtn.style.display = "block";
-  if (closeBtn) closeBtn.style.display = "none";
+if (openBtn)  openBtn.style.display = "block";
+if (closeBtn) closeBtn.style.display = isMobile() ? "none" : "none";
 
   openBtn?.setAttribute("aria-expanded", "false");
   sidebar?.setAttribute("aria-hidden", "true");
@@ -290,17 +347,73 @@ document.addEventListener("keydown", (e) => {
 });
 
 window.addEventListener("resize", () => {
-  if (!isMobile()) {
-    overlay?.classList.remove("show");
-    document.body.classList.remove("no-scroll");
-    sidebar?.classList.remove("is-open");
-    // optional: keep desktop state collapsed or expanded as you prefer
+  if (isMobile()) {
+    // leaving desktop -> mobile: cleanup desktop state
+    document.body.classList.remove('sidebar-collapsed');
+    sidebar?.classList.remove('hidden');
+    calendarContainer?.classList.remove('full-width');
+
+    // also make sure drawer is closed until user opens it
+    overlay?.classList.remove('show');
+    document.body.classList.remove('no-scroll');
+    sidebar?.classList.remove('is-open');
+  } else {
+    // leaving mobile -> desktop: no overlay on desktop
+    overlay?.classList.remove('show');
+    document.body.classList.remove('no-scroll');
+    sidebar?.classList.remove('is-open');
   }
+});
+// handles (put near your other consts)
+const openBtnDesktop = document.getElementById('open-sidebar-btn-desktop');
+
+// clicking the desktop burger reopens the sidebar
+openBtnDesktop?.addEventListener('click', () => {
+  openSidebar();               // your existing function
+  // No need to hide the button manually: removing 'sidebar-collapsed'
+  // makes CSS hide it automatically.
 });
 
 
+// Collapse on desktop / close on mobile
+collapseBtn?.addEventListener('click', (e) => {
+  e.preventDefault();
+
+  if (isMobile()) {
+    // behave like the mobile drawer "close"
+    closeSidebar();
+    return;
+  }
+
+  // Desktop: collapse the inline sidebar and let content fill the space
+  document.body.classList.add('sidebar-collapsed');
+  sidebar?.classList.add('hidden');
+  calendarContainer?.classList.add('full-width');
+
+  if (openBtn)  openBtn.style.display  = 'block';
+  if (closeBtn) closeBtn.style.display = 'none';
+
+  openBtn?.setAttribute('aria-expanded', 'false');
+  sidebar?.setAttribute('aria-hidden', 'true');
+
+  // move focus to a visible control (a11y)
+  openBtn?.focus();
+});
+
   // Kick things off
   initLogin();
+
+document.getElementById('close-sidebar-btn')
+  ?.addEventListener('click', () => closeSidebar && closeSidebar());
+
+  
+document.querySelectorAll('#calendar-sidebar .calendarOptions').forEach(tile => {
+  tile.addEventListener('click', () => {
+    document.querySelectorAll('#calendar-sidebar .calendarOptions')
+      .forEach(x => x.classList.remove('active'));
+    tile.classList.add('active');
+  });
+});
 
   //
 //Show times on calendar for Upcoming Hours 
