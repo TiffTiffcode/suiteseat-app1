@@ -681,14 +681,131 @@ for (let i = 0; i < 96; i++) {
   column.appendChild(slot);
 }
 
-
-
-
     container.appendChild(column);
   }
 }
 
+/* ---------- TIME HELPERS (paste once) ---------- */
+function parseTimeLoose(input) {
+  if (input == null) return { h: 0, m: 0 };
+  let s = String(input).trim();
+  const ampmMatch = s.match(/\b(am|pm)\b/i);
+  const hasAMPM = !!ampmMatch;
+  const isPM = hasAMPM && /pm/i.test(ampmMatch[1]);
+  s = s.replace(/[^0-9:]/g, '');
+  const m = s.match(/^(\d{1,2})(?::?(\d{2}))?$/);
+  if (!m) return { h: 0, m: 0 };
+  let h = parseInt(m[1], 10);
+  let min = m[2] ? parseInt(m[2], 10) : 0;
+  if (hasAMPM) {
+    if (isPM && h !== 12) h += 12;
+    if (!isPM && h === 12) h = 0;
+  }
+  h = Math.max(0, Math.min(23, h));
+  min = Math.max(0, Math.min(59, min));
+  return { h, m: min };
+}
+
+function format12h(h, m) {
+  const ap = h >= 12 ? 'PM' : 'AM';
+  const hh = ((h + 11) % 12) + 1;
+  const mm = String(m).padStart(2, '0');
+  return `${hh}:${mm} ${ap}`;
+}
+
+function addMinutes(h, m, mins) {
+  const total = h * 60 + m + (Number(mins) || 0);
+  const H = Math.floor(((total % (24 * 60)) + (24 * 60)) % (24 * 60) / 60);
+  const M = ((total % 60) + 60) % 60;
+  return { h: H, m: M };
+}
+
+function getTopOffsetFromTimeLoose(timeStr, slotHeight = 15) {
+  const { h, m } = parseTimeLoose(timeStr);
+  const minutesFromMidnight = h * 60 + m;
+  // your grid uses 15-min slots at 15px → 1px/minute
+  return (minutesFromMidnight / 15) * slotHeight;
+}
+
+/* ---------- tiny utilities (paste once) ---------- */
+function getDayIndexFromDate(dateStr) {
+  // Prefer currentWeekDates if available (Sun=0..Sat=6)
+  if (Array.isArray(currentWeekDates) && currentWeekDates.length === 7) {
+    const iso = d => new Date(d).toISOString().slice(0, 10);
+    const idx = currentWeekDates.findIndex(d => iso(d) === String(dateStr).slice(0, 10));
+    if (idx >= 0) return idx;
+  }
+  const d = new Date(dateStr);
+  return isNaN(d) ? 0 : d.getDay();
+}
+
+function lookupName(map, id) {
+  const v = map && map[id];
+  if (!v) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object') {
+    return v.name || v['Service Name'] || v.values?.['Service Name'] || v.values?.Name || '';
+  }
+  return '';
+}
+
+// --- time helpers (robust) ---
+function parseTimeLoose(input) {
+  if (input == null) return { h: 0, m: 0 };
+  let s = String(input).trim();
+
+  // normalize AM/PM
+  const ampmMatch = s.match(/\b(am|pm)\b/i);
+  const hasAMPM = !!ampmMatch;
+  const isPM = hasAMPM && /pm/i.test(ampmMatch[1]);
+
+  // strip everything except digits, colon, space, am/pm remains in hasAMPM
+  s = s.replace(/[^0-9:]/g, '');
+
+  // match H or HH or H:MM / HH:MM
+  const m = s.match(/^(\d{1,2})(?::?(\d{2}))?$/);
+  if (!m) return { h: 0, m: 0 };
+
+  let h = parseInt(m[1], 10);
+  let min = m[2] ? parseInt(m[2], 10) : 0;
+
+  if (hasAMPM) {
+    if (isPM && h !== 12) h += 12;
+    if (!isPM && h === 12) h = 0;
+  }
+  h = Math.max(0, Math.min(23, h));
+  min = Math.max(0, Math.min(59, min));
+  return { h, m: min };
+}
+
+function format12h(h, m) {
+  const ap = h >= 12 ? 'PM' : 'AM';
+  const hh = ((h + 11) % 12) + 1;
+  const mm = String(m).padStart(2, '0');
+  return `${hh}:${mm} ${ap}`;
+}
+
+function addMinutes(h, m, mins) {
+  const total = h * 60 + m + (Number(mins) || 0);
+  const H = Math.floor(((total % (24 * 60)) + (24 * 60)) % (24 * 60) / 60);
+  const M = ((total % 60) + 60) % 60;
+  return { h: H, m: M };
+}
+
+function getTopOffsetFromTimeLoose(timeStr, slotHeight = 15) {
+  const { h, m } = parseTimeLoose(timeStr);
+  const minutesFromMidnight = h * 60 + m;
+  // your grid uses 15-min slots at 15px each → 1px per minute
+  return (minutesFromMidnight / 15) * slotHeight;
+}
+function toTimeValue(raw) {
+  if (!raw) return '';
+  const { h, m } = parseTimeLoose(raw);   // uses the helper you already have
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
   /////////////////////Render Appointments as Cards on the Grid//////////
+/////////////////////Render Appointments as Cards on the Grid//////////
 function renderAppointmentsOnGrid(appointments, maps = {}) {
   const grid = document.querySelector(".time-slots-container");
   if (!grid) return;
@@ -696,60 +813,73 @@ function renderAppointmentsOnGrid(appointments, maps = {}) {
   // remove previous cards
   document.querySelectorAll(".appointment-card").forEach(el => el.remove());
 
-  const currentWeekDatesStr = currentWeekDates.map(d =>
-    new Date(d).toISOString().split("T")[0]
-  );
+  const slotWidthPercent = 100 / 7; // = 14.2857%
 
-  const serviceMap = maps.serviceMap || window.__serviceMap || {};
+  (appointments || []).forEach(appt => {
+    const date = appt.date || appt.Date || appt.values?.Date;
+    const timeRaw =
+      appt.time ||
+      appt.Time ||
+      appt.startTime ||
+      appt.values?.Time ||
+      appt.values?.['Start Time'];
 
-  appointments.forEach(appt => {
-    const { _id, date, time, clientName, duration, businessId, clientId } = appt;
-    const serviceIds = Array.isArray(appt.serviceIds) ? appt.serviceIds : (appt.serviceIds ? [appt.serviceIds] : []);
-    if (!date || !time) return;
-    if (!currentWeekDatesStr.includes(date)) return;
+    if (!date || !timeRaw) return;
 
-    const dayIndex  = getDayIndexFromDate(date);
-    const topOffset = getTopOffsetFromTime(time);
+    const dayIndex = getDayIndexFromDate(date);
 
-    // compute end time
-    const { h, m } = parseHHMM(time);
-    const endHM = addMinutes(h, m, Number(duration) || 0);
+    // parse + compute labels
+    const { h, m } = parseTimeLoose(timeRaw);
+    const duration =
+      Number(appt.duration ?? appt.Duration ?? appt.values?.Duration ?? appt.values?.['Service Duration']) || 0;
+    const endHM = addMinutes(h, m, duration);
     const startLabel = format12h(h, m);
     const endLabel   = format12h(endHM.h, endHM.m);
 
-    // service names from map
-    const services = serviceIds.map(id => lookupName(serviceMap, id)).filter(Boolean);
+    // services (if you pass a map)
+    const serviceMap = maps.serviceMap || window.__serviceMap || {};
+    const serviceIds = Array.isArray(appt.serviceIds)
+      ? appt.serviceIds
+      : (appt.serviceIds ? [appt.serviceIds]
+         : (Array.isArray(appt.values?.['Service(s)'])
+            ? appt.values['Service(s)'].map(s => s?._id || s)
+            : []));
+    const services = (serviceIds || []).map(id => lookupName(serviceMap, String(id))).filter(Boolean);
     const servicesHtml = services.length
-      ? `<ul class="appt-services">${services.map(s => `<li>${s}</li>`).join("")}</ul>`
-      : `<ul class="appt-services"><li>(No service)</li></ul>`;
+      ? `<ul class="appt-services">${services.map(s => `<li>${s}</li>`).join('')}</ul>`
+      : '';
 
- const card = document.createElement("div");
-card.className = "appointment-card";
-card.dataset.id = String(_id); // ✅ give the card the record id
+    // build card
+    const card = document.createElement("div");
+    card.className = "appointment-card";
+    card.dataset.id = String(appt._id || appt.id || '');
 
-card.style.position = "absolute";
-card.style.top  = `${Math.round(topOffset)}px`;
-card.style.left = `calc(${dayIndex} * 14.28%)`; // your 7-column layout
-// (width is handled by your .appointment-card CSS)
+    card.style.position = "absolute";
+    card.style.top = `${Math.round(getTopOffsetFromTimeLoose(timeRaw))}px`;
+    card.style.left = `calc(${dayIndex} * ${slotWidthPercent}%)`;
+    card.style.width = `${slotWidthPercent}%`;
 
-card.innerHTML = `
-  <div class="appt-time"><strong>${startLabel} – ${endLabel}</strong></div>
-  <div class="appt-client">${(clientName || "").trim() || "(No client)"}</div>
-  ${servicesHtml}
-`;
+    const clientName =
+      appt.clientName ||
+      appt.values?.['Client Name'] ||
+      appt.values?.Client ||
+      '';
 
-// click → open editor for this id
-card.addEventListener("click", () => {
-  if (typeof openAppointmentEditor === "function") {
-    openAppointmentEditor(String(_id));
-  } else {
-    // fallback: just open the blank popup if editor isn’t wired
-    openAppointmentPopup();
-  }
-});
+    card.innerHTML = `
+      <div class="appt-time"><strong>${startLabel} – ${endLabel}</strong></div>
+      <div class="appt-client">${(clientName || "(No client)")}</div>
+      ${servicesHtml}
+    `;
 
-grid.appendChild(card);
+    card.addEventListener("click", () => {
+      if (typeof openAppointmentEditor === "function") {
+        openAppointmentEditor(String(appt._id || appt.id));
+      } else if (typeof openAppointmentPopup === "function") {
+        openAppointmentPopup();
+      }
+    });
 
+    grid.appendChild(card);
   });
 }
 
@@ -1258,6 +1388,21 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   openAppointmentEditor(card.dataset.id);
 });
+// Convert "1:30 AM", "13:30", "130" → "HH:MM" (24h) for <input type="time">
+function toTimeValue(raw) {
+  if (!raw) return '';
+  const s = String(raw).trim();
+  const m = s.match(/^(\d{1,2})(?::?(\d{2}))?\s*(am|pm)?$/i);
+  if (!m) return '';
+  let h = parseInt(m[1], 10);
+  let min = parseInt(m[2] || '0', 10);
+  const ap = (m[3] || '').toLowerCase();
+  if (ap === 'pm' && h !== 12) h += 12;
+  if (ap === 'am' && h === 12) h = 0;
+  h = Math.max(0, Math.min(23, h));
+  min = Math.max(0, Math.min(59, min));
+  return `${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}`;
+}
 
 // 2) Open the popup in EDIT mode and prefill fields
 async function openAppointmentEditor(apptId) {
@@ -1327,8 +1472,16 @@ async function openAppointmentEditor(apptId) {
     const dateEl = document.getElementById('appointment-date');
     if (dateEl) dateEl.value = date;
 
-    const timeEl = document.getElementById('appointment-time');
-    if (timeEl) timeEl.value = to12h(time24);
+   const timeEl  = document.getElementById('appointment-time');
+// use any field that might hold start time, then normalize to 24h
+const rawTime =
+  v['Time'] ??
+  v['Start Time'] ??
+  v.time ??
+  v.startTime ??
+  ''; 
+if (timeEl) timeEl.value = toTimeValue(rawTime); // e.g. "01:30"
+
 
     const durEl  = document.getElementById('appointment-duration');
     if (durEl)  durEl.value = duration;

@@ -574,3 +574,209 @@ body {
 #image-upload {
   max-width: 100%;
 }
+
+
+
+
+/* ===== Fix appointment card overflow / clipping ===== */
+
+/* Card should never exceed the container */
+.appointment-card{
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Middle column can shrink instead of pushing layout wide */
+.appointment-info{
+  min-width: 0;
+}
+
+/* Make the orange tile responsive (override earlier min-width) */
+.pro-card{
+  min-width: 0;                               /* override the 120px min */
+  flex: 0 0 clamp(90px, 22vw, 140px);         /* responsive width */
+  font-size: clamp(12px, 2.6vw, 16px);
+  padding: 10px;
+}
+
+/* Keep the cancel button on one line when it fits */
+.appointment-actions{
+  flex: 0 0 auto;
+  margin-left: 16px;
+  white-space: nowrap;
+}
+
+/* On narrow screens, wrap the row and place actions below */
+@media (max-width: 700px){
+  .appointment-card{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .pro-card{
+    flex-basis: clamp(80px, 25vw, 120px);
+  }
+  .appointment-actions{
+    order: 3;                 /* move to next line */
+    flex: 1 1 100%;
+    margin-left: 0;
+    padding-right: 0;
+    display: flex;
+    justify-content: flex-end;
+  }
+}
+
+/* Long titles shouldn’t force horizontal growth */
+.appointment-info h3{
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* === Appointment card layout: grid for perfect alignment === */
+.appointment-card{
+  display: grid;                          /* overrides previous flex */
+  grid-template-columns: minmax(96px,140px) 1fr auto;  /* pro | info | actions */
+  align-items: center;                    /* center vertically (Cancel included) */
+  gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.pro-card{
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  /* keep it visually compact on smaller widths */
+  flex: initial;                          /* neutralize old flex rules if any */
+}
+
+.appointment-info{
+  min-width: 0;                           /* allow text to shrink/wrap instead of pushing layout */
+}
+
+.appointment-info h3{
+  margin-top: 0;                          /* tidy spacing */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.appointment-actions{
+  justify-self: end;                      /* right edge */
+  align-self: center;                     /* vertical center */
+  margin-left: 0;                         /* override old margin if set */
+  padding-right: 0;
+  white-space: nowrap;
+}
+
+/* Slightly narrower screens: tighten the pro column a bit */
+@media (max-width: 700px){
+  .appointment-card{
+    grid-template-columns: minmax(84px,120px) 1fr auto;
+  }
+}
+
+/* Very small screens: let the Cancel button drop below */
+@media (max-width: 520px){
+  .appointment-card{
+    grid-template-columns: minmax(74px,110px) 1fr;
+    align-items: start;
+  }
+  .appointment-actions{
+    grid-column: 1 / -1;                  /* full row below */
+    justify-self: end;
+    margin-top: 8px;
+  }
+}
+/* === Compact appointment card === */
+.appointment-card{
+  /* smaller left tile, keep info flexible, actions at right */
+  display: grid;
+  grid-template-columns: clamp(80px, 13vw, 120px) 1fr auto;
+  gap: 14px;
+  padding: 14px;
+  align-items: center;
+}
+
+/* orange tile */
+.pro-card{
+  min-width: 0;            /* allow it to shrink */
+  height: clamp(90px, 18vw, 140px);
+  padding: 10px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pro-card, .pro-card *{
+  font-size: 12px;         /* smaller type inside the tile */
+  line-height: 1.15;
+}
+
+/* details column */
+.appointment-info{
+  min-width: 0;
+}
+.appointment-info h3{
+  margin: 0 0 8px;
+  font-size: clamp(18px, 2.2vw, 22px);
+}
+.appointment-info p{
+  margin: 6px 0;
+  font-size: clamp(14px, 1.8vw, 16px);
+}
+
+/* actions column */
+.appointment-actions{
+  justify-self: end;
+  align-self: center;
+}
+.cancel-appointment-btn{
+  padding: 8px 12px;
+  font-size: 13.5px;
+  border-radius: 8px;
+}
+
+/* tighten further on narrower viewports */
+@media (max-width: 700px){
+  .appointment-card{
+    grid-template-columns: 90px 1fr auto;
+    gap: 12px;
+  }
+  .pro-card{ padding: 8px; }
+  .pro-card, .pro-card *{ font-size: 11.5px; }
+  .cancel-appointment-btn{ padding: 8px 10px; font-size: 13px; }
+}
+
+/* super small: let Cancel drop to its own row so nothing is clipped */
+@media (max-width: 520px){
+  .appointment-card{ grid-template-columns: 80px 1fr; align-items: start; }
+  .appointment-actions{ grid-column: 1 / -1; justify-self: end; margin-top: 8px; }
+}
+/* place LAST in your CSS */
+.appointment-card{
+  display: grid !important;
+  grid-template-columns: 100px 1fr auto; /* pro tile | details | actions */
+  align-items: center !important;        /* vertical center everything */
+  gap: 14px;
+  min-height: 140px;                     /* gives a nice target to center in */
+}
+
+.pro-card{
+  height: 110px;                         /* smaller orange tile */
+  display: flex; align-items: center; justify-content: center;
+}
+
+.appointment-actions{
+  align-self: center !important;         /* keep Cancel in the middle */
+  justify-self: end;
+}
+
+/* if you previously had a rule that moved the actions to a new row on small screens,
+   override it so the button stays in the middle */
+@media (max-width:520px){
+  .appointment-card{ grid-template-columns: 90px 1fr auto; }
+  .appointment-actions{ grid-column: auto; margin-top: 0; }
+}

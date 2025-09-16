@@ -144,7 +144,7 @@ fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // Serve uploaded files at /uploads/<filename>
 app.use('/uploads', express.static(UPLOADS_DIR));
-app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+
 
 // Multer storage
 const storage = multer.diskStorage({
@@ -165,6 +165,36 @@ const upload = multer({
 
 //////////////////////////////////////////////
 //User Authentication
+
+// Save profile updates (name, phone, etc.) + optional file upload
+app.post('/update-user-profile',
+  ensureAuthenticated,
+  upload.single('profilePhoto'),   // field name must be "profilePhoto"
+  async (req, res) => {
+    try {
+      const userId = req.session.userId;
+      const { firstName, lastName, phone, address, email } = req.body;
+
+      // Build update doc
+      const update = { firstName, lastName, phone, address, email };
+
+      // If a file was uploaded, expose it at /uploads/<filename>
+      if (req.file) {
+        update.profilePhoto = `/uploads/${req.file.filename}`;
+      }
+
+      const user = await AuthUser.findByIdAndUpdate(userId, update, { new: true, lean: true });
+      if (!user) return res.status(404).json({ message: 'User not found' });
+
+      // Return shape expected by the front-end
+      res.json({ user });
+    } catch (e) {
+      console.error('POST /update-user-profile failed:', e);
+      res.status(500).json({ message: 'Server error saving profile' });
+    }
+  }
+);
+
 app.get("/api/me", (req,res)=>{
   if (!req.session?.userId) return res.status(401).json({ loggedIn:false });
   res.json({ 
@@ -243,10 +273,22 @@ app.get('/api/me/records', ensureAuthenticated, async (req, res) => {
 
     const lim = Math.min(parseInt(limit, 10) || 100, 500);
     const skp = Math.max(parseInt(skip, 10) || 0, 0);
+const rows = await Record.find(q)
+  .sort(mongoSort).skip(skp).limit(lim)
+  .populate({ path: 'createdBy', select: 'firstName lastName name' })  // <— add this
+  .lean();
 
-    const rows = await Record.find(q).sort(mongoSort).skip(skp).limit(lim).lean();
-    res.json({ data: rows.map(r => ({ _id: r._id, values: r.values || {} })) });
-  } catch (e) {
+res.json({
+  data: rows.map(r => ({
+    _id: r._id,
+    values: r.values || {},
+    createdBy: r.createdBy ? {
+      firstName: r.createdBy.firstName || '',
+      lastName:  r.createdBy.lastName  || '',
+      name:      r.createdBy.name      || ''
+    } : null
+  }))
+}); } catch (e) {
     console.error('GET /api/me/records failed:', e);
     res.status(500).json({ error: e.message });
   }

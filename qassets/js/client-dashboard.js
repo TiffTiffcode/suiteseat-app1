@@ -124,83 +124,8 @@ const headerRight = document.querySelector(".right-group");
   }
 })();
 
-// ---- Client Dashboard avatar ----
-document.addEventListener("DOMContentLoaded", async () => {
- const DEFAULT_AVATAR =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    `<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'>
-       <rect width='100%' height='100%' fill='#eee'/>
-       <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle'
-             font-family='sans-serif' font-size='18' fill='#999'>No Photo</text>
-     </svg>`
-  );
 
-  const CANDIDATE_ME_ENDPOINTS = [
-    "/api/users/me",     // v2 (preferred)
-    "/get-current-user", // your older route
-    "/check-login"       // fallback that returns { loggedIn, user? }
-  ];
 
-  async function fetchJson(url) {
-    const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const ct = (res.headers.get("content-type") || "").toLowerCase();
-    if (!ct.includes("application/json")) throw new Error(`Expected JSON, got ${ct}`);
-    return res.json();
-  }
-
-  async function getCurrentUser() {
-    for (const url of CANDIDATE_ME_ENDPOINTS) {
-      try {
-        const data = await fetchJson(url);
-        if (url.includes("check-login") && data?.loggedIn === false) continue;
-
-        // Normalize possible shapes: {user:{...}} or {data:{...}} or {...}
-        const u = data?.user || data?.data || data;
-
-        // Some older shapes put id at top level as userId
-        return {
-          id: u?._id || u?.id || data?.userId || null,
-          firstName: u?.firstName ?? u?.values?.firstName ?? "",
-          lastName:  u?.lastName  ?? u?.values?.lastName  ?? "",
-          email:     u?.email     ?? u?.values?.email     ?? "",
-          phone:     u?.phone     ?? u?.values?.phone     ?? "",
-          profilePhoto: u?.profilePhoto || u?.avatarUrl || ""
-        };
-      } catch {
-        // try next endpoint
-      }
-    }
-    return null;
-  }
-async function initClientAvatar() {
-  const img = document.getElementById("client-profile-photo"); // ✅ correct selector
-  if (!img) return;
-
-  try {
-    const me = await (window.getCurrentUserNormalized?.() || getCurrentUser());
-    const raw = me?.profilePhoto || "";
-    if (raw) {
-      const absolute = new URL(raw, location.origin).href + `?t=${Date.now()}`; // cache-bust
-      img.src = absolute;
-      img.style.display = "block";
-    } else {
-      // Either hide or show the inline default
-      img.src = DEFAULT_AVATAR;
-      img.style.display = "block";
-    }
-  } catch {
-    img.src = DEFAULT_AVATAR;
-    img.style.display = "block";
-  }
-}
-document.addEventListener("DOMContentLoaded", initClientAvatar);
-
-document.addEventListener("DOMContentLoaded", () => {
-  initClientAvatar();
-});
-});
 
 async function getCurrentUser() {
   const tries = [
@@ -262,7 +187,49 @@ async function getCurrentUser() {
             }
             // --- END IMPORTANT ---
         });
+//show image on page load 
+// Inline fallback so you never 404 on a missing file
+// --- Hydrate header avatar on every page load ---
+const DEFAULT_AVATAR_DATAURL =
+  "data:image/svg+xml;utf8," + encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'>
+       <rect width='100%' height='100%' fill='#eee'/>
+       <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle'
+             font-family='sans-serif' font-size='18' fill='#999'>No Photo</text>
+     </svg>`
+  );
 
+async function hydrateHeaderAvatar() {
+  const headerImg = document.getElementById("client-profile-photo");
+  if (!headerImg) return;
+
+  headerImg.onerror = () => {
+    headerImg.onerror = null;
+    headerImg.src = DEFAULT_AVATAR_DATAURL;
+    headerImg.style.display = "block";
+  };
+
+  try {
+    const res = await fetch("/api/users/me", { credentials: "include" });
+    if (!res.ok) {
+      headerImg.src = DEFAULT_AVATAR_DATAURL;
+      headerImg.style.display = "block";
+      return;
+    }
+    const data = await res.json();
+    const src = data?.user?.profilePhoto;
+    headerImg.src = (src && typeof src === "string")
+      ? src + (src.includes("?") ? "&" : "?") + "t=" + Date.now()
+      : DEFAULT_AVATAR_DATAURL;
+    headerImg.style.display = "block";
+  } catch {
+    headerImg.src = DEFAULT_AVATAR_DATAURL;
+    headerImg.style.display = "block";
+  }
+}
+
+// ✅ You're already inside DOMContentLoaded — just call it once
+hydrateHeaderAvatar();
         //Open Reset Password popup
 document.getElementById("open-reset-password-popup-btn").addEventListener("click", () => {
   document.getElementById("popup-reset-password").style.display = "block";
@@ -311,42 +278,6 @@ document.getElementById("change-password-form").addEventListener("submit", async
     alert("Something went wrong.");
   }
 });
-
-
-//show image on page load 
-// --- Hydrate header avatar on every page load (no popup involved) ---
-async function hydrateHeaderAvatar() {
-  const headerImg = document.getElementById("client-profile-photo");
-  if (!headerImg) return;
-
-  // If the saved path 404s, fall back to default
-  headerImg.onerror = () => {
-    headerImg.onerror = null; // prevent loop
-    headerImg.src = "/uploads/default-avatar.png";
-    headerImg.style.display = "block";
-  };
-
-  try {
-    const res = await fetch("/api/users/me", { credentials: "include" });
-    if (!res.ok) {
-      // not logged in (401) → keep default
-      return;
-    }
-    const data = await res.json();
-    const src = data?.user?.profilePhoto;  // should be like "/uploads/169....png"
-    if (src && typeof src === "string") {
-      // cache-buster so you don't see an old cached file after uploads
-      headerImg.src = src + (src.includes("?") ? "&" : "?") + "t=" + Date.now();
-      headerImg.style.display = "block";
-    }
-  } catch (err) {
-    // keep default
-    console.warn("hydrateHeaderAvatar failed:", err);
-  }
-}
-
-// Run after the DOM is ready (your script is defer'd, this is safe)
-document.addEventListener("DOMContentLoaded", hydrateHeaderAvatar);
 
 
 
@@ -447,18 +378,6 @@ document.addEventListener("DOMContentLoaded", hydrateHeaderAvatar);
   window.getCurrentUserNormalized = getCurrentUserNormalized;
 
 
-// Live image preview in the popup
-document.getElementById("image-upload").addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  const preview = document.getElementById("client-profile-photo-preview");
-  const noImg = document.getElementById("no-image-text");
-  if (!file) return;
-  preview.src = URL.createObjectURL(file);
-  preview.style.display = "block";
-  if (noImg) noImg.style.display = "none";
-});
-
-
 async function openSettingsPopup() {
   try {
     const res = await fetch("/api/users/me", { credentials: "include" });
@@ -474,37 +393,52 @@ async function openSettingsPopup() {
     const u = data?.user || {};
 
     // Fill fields
-    document.getElementById("popup-First-name-input").value = u.firstName || "";
-    document.getElementById("popup-Last-name-input").value  = u.lastName  || "";
-    document.getElementById("popup-phone-number-input").value = u.phone   || "";
-    document.getElementById("popup-address-input").value = u.address || "";
-    document.getElementById("popup--email-input").value  = u.email   || "";
+    document.getElementById("popup-First-name-input").value   = u.firstName || "";
+    document.getElementById("popup-Last-name-input").value    = u.lastName  || "";
+    document.getElementById("popup-phone-number-input").value = u.phone     || "";
+    document.getElementById("popup-address-input").value      = u.address   || "";
+    document.getElementById("popup--email-input").value       = u.email     || "";
 
-    // Photo preview
-const headerImg  = document.getElementById("client-profile-photo");           // header
-const previewImg = document.getElementById("client-profile-photo-preview");   // popup
-const noImg      = document.getElementById("no-image-text");
+    // Photo preview (existing)
+    const headerImg  = document.getElementById("client-profile-photo");
+    const previewImg = document.getElementById("client-profile-photo-preview");
+    const noImg      = document.getElementById("no-image-text");
 
-if (u.profilePhoto) {
-  const src = u.profilePhoto;
-  if (headerImg)  headerImg.src = src;
-  if (previewImg) { previewImg.src = src; previewImg.style.display = "block"; }
-  if (noImg) noImg.style.display = "none";
-} else {
-  if (previewImg) previewImg.style.display = "none";
-  if (noImg) noImg.style.display = "block";
-}
+    if (u.profilePhoto) {
+      const src = u.profilePhoto;
+      if (headerImg)  headerImg.src = src;
+      if (previewImg) { previewImg.src = src; previewImg.style.display = "block"; }
+      if (noImg) noImg.style.display = "none";
+    } else {
+      if (previewImg) previewImg.style.display = "none";
+      if (noImg) noImg.style.display = "block";
+    }
 
+    // ▶️ Bind image change only once (input definitely exists now)
+    const imgInput = document.getElementById("image-upload");
+    if (imgInput && !imgInput.dataset.bound) {
+      imgInput.addEventListener("change", (e) => {
+        const file = e.target.files?.[0];
+        const preview = document.getElementById("client-profile-photo-preview");
+        const noImgTxt = document.getElementById("no-image-text");
+        if (!file || !preview) return;
+        preview.src = URL.createObjectURL(file);
+        preview.style.display = "block";
+        if (noImgTxt) noImgTxt.style.display = "none";
+      });
+      imgInput.dataset.bound = "1";
+    }
 
     // OPEN
     document.getElementById("popup-settings").style.display = "block";
-    showOverlay(); // <-- this alone handles overlay + body class
+    showOverlay();
 
   } catch (err) {
     console.error(err);
     alert("Couldn't load your settings.");
   }
 }
+
 
 function closeSettingsPopup() {
   document.getElementById("popup-settings").style.display = "none";
@@ -549,94 +483,89 @@ document.getElementById("popup-overlay")?.addEventListener("click", () => {
 
 
 
-  // Submit handler (multipart -> /update-user-profile)
+// Submit handler (multipart -> /update-user-profile)
 // IMPORTANT: keep id="popup-add-business-form" as in your HTML
 const settingsForm = document.getElementById("popup-add-business-form");
 
-settingsForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+if (settingsForm && !settingsForm.dataset.bound) {
+  settingsForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-  const saveBtn = document.getElementById("save-button");
-  saveBtn.disabled = true;
+    const saveBtn = document.getElementById("save-button");
+    if (saveBtn) saveBtn.disabled = true;
 
-  try {
-    // Build FormData with the keys your server expects
-    const fd = new FormData();
-    fd.append("firstName", document.getElementById("popup-First-name-input").value.trim());
-    fd.append("lastName",  document.getElementById("popup-Last-name-input").value.trim());
-    fd.append("phone",     document.getElementById("popup-phone-number-input").value.trim());
-    fd.append("address",   document.getElementById("popup-address-input").value.trim());
-    fd.append("email",     document.getElementById("popup--email-input").value.trim());
+    try {
+      // Build FormData with the keys your server expects
+      const fd = new FormData();
+      fd.append("firstName", document.getElementById("popup-First-name-input").value.trim());
+      fd.append("lastName",  document.getElementById("popup-Last-name-input").value.trim());
+      fd.append("phone",     document.getElementById("popup-phone-number-input").value.trim());
+      fd.append("address",   document.getElementById("popup-address-input").value.trim());
+      fd.append("email",     document.getElementById("popup--email-input").value.trim());
 
-    // File (make sure server expects "profilePhoto" as the field name — it does)
-    const file = document.getElementById("image-upload").files[0];
-    if (file) fd.append("profilePhoto", file);
+      // File (make sure server expects "profilePhoto" as the field name)
+      const file = document.getElementById("image-upload").files[0];
+      if (file) fd.append("profilePhoto", file);
 
-    const res = await fetch("/update-user-profile", {
-      method: "POST",
-      body: fd,
-      credentials: "include", // cookie session
-      // NOTE: do NOT set Content-Type for FormData; the browser sets the boundary
-    });
+      const res = await fetch("/update-user-profile", {
+        method: "POST",
+        body: fd,
+        credentials: "include", // cookie session
+      });
 
-    const ct = res.headers.get("content-type") || "";
-    const payload = ct.includes("application/json") ? await res.json() : { message: await res.text() };
+      const ct = res.headers.get("content-type") || "";
+      const payload = ct.includes("application/json") ? await res.json() : { message: await res.text() };
+      if (!res.ok) throw new Error(payload?.message || "Update failed");
 
-    if (!res.ok) {
-      throw new Error(payload?.message || "Update failed");
-    }
+      // ✅ Success — update header + popup images and hide 'no image'
+      const headerImg  = document.getElementById("client-profile-photo");
+      const previewImg = document.getElementById("client-profile-photo-preview");
+      const noImg      = document.getElementById("no-image-text");
 
-    // Success — update preview + any greeting
-   // ✅ After successful save: update header + popup images and hide 'no image'
-const headerImg  = document.getElementById("client-profile-photo");           // header avatar
-const previewImg = document.getElementById("client-profile-photo-preview");   // popup preview
-const noImg      = document.getElementById("no-image-text");
+      const applySrc = (img, src) => {
+        if (!img || !src) return;
+        img.src = src + (src.includes("?") ? "&" : "?") + "t=" + Date.now(); // cache-bust
+        img.style.display = "block";
+      };
 
-const applySrc = (img, src) => {
-  if (!img || !src) return;
-  // cache-buster so the browser doesn't show an old file
-  img.src = src + (src.includes('?') ? '&' : '?') + 't=' + Date.now();
-  img.style.display = "block";
-};
+      let newPhoto = payload?.user?.profilePhoto;
 
-const newPhoto = payload?.user?.profilePhoto;
+      if (!newPhoto) {
+        try {
+          const me = await fetch("/api/users/me", { credentials: "include" });
+          if (me.ok) {
+            const data = await me.json();
+            newPhoto = data?.user?.profilePhoto || "";
+          }
+        } catch {}
+      }
 
-if (newPhoto) {
-  applySrc(headerImg, newPhoto);
-  applySrc(previewImg, newPhoto);
-  if (noImg) noImg.style.display = "none";
-} else {
-  // fallback: re-fetch the latest profile to get the saved path
-  try {
-    const me = await fetch("/api/users/me", { credentials: "include" });
-    if (me.ok) {
-      const data = await me.json();
-      const src = data?.user?.profilePhoto;
-      if (src) {
-        applySrc(headerImg, src);
-        applySrc(previewImg, src);
+      if (newPhoto) {
+        applySrc(headerImg, newPhoto);
+        applySrc(previewImg, newPhoto);
         if (noImg) noImg.style.display = "none";
       }
+
+      // Update greeting if you show “Hey [Name]”
+      const fn = document.getElementById("popup-First-name-input").value.trim();
+      const greet = document.getElementById("greeting-name");
+      if (greet && fn) greet.textContent = fn;
+
+      alert("✅ Settings saved!");
+      closeSettingsPopup();
+
+    } catch (err) {
+      console.error("Save settings error:", err);
+      alert(err.message || "Couldn't save settings.");
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
     }
-  } catch {}
+  });
+
+  // mark as bound so we don't attach twice
+  settingsForm.dataset.bound = "1";
 }
 
-
-    // Update greeting if you show “Hey [Name]”
-    const fn = document.getElementById("popup-First-name-input").value.trim();
-    const greet = document.getElementById("greeting-name"); // e.g. <span id="greeting-name"></span>
-    if (greet) greet.textContent = fn || greet.textContent;
-
-    alert("✅ Settings saved!");
-    closeSettingsPopup();
-
-  } catch (err) {
-    console.error("Save settings error:", err);
-    alert(err.message || "Couldn't save settings.");
-  } finally {
-    saveBtn.disabled = false;
-  }
-});
 
 })();
 
@@ -668,47 +597,81 @@ if (newPhoto) {
     throw new Error(`Expected JSON; got ${ct}. ${txt.slice(0,160)}`);
   };
 
-  // Normalize one record {_id, values} -> the shape our renderer expects
-  const normalize = ({ _id, values: v = {} }) => {
-    const pick = (obj, keys) => {
-      for (const k of keys) if (obj && obj[k] != null) return obj[k];
-      return undefined;
-    };
+// Normalize one record {_id, values} -> the shape our renderer expects
+const normalize = (row) => {
+  const v = row?.values || {};
 
-    const date  = pick(v, ['Date','date']) || '';
-    const time  = pick(v, ['Time','Start Time','time']) || '';
-    const dur   = Number(pick(v, ['Duration','duration'])) || undefined;
+  const pick = (obj, keys) => {
+    for (const k of keys) if (obj && obj[k] != null && obj[k] !== "") return obj[k];
+    return undefined;
+  };
 
-    let startAt = pick(v, ['startISO','start','startAt']) || (date && time ? `${date}T${time}` : '');
-    let endAt   = pick(v, ['endISO','end','endAt']) || '';
-    if (!endAt && startAt && dur) {
-      const s = new Date(startAt);
-      if (!Number.isNaN(s.getTime())) endAt = new Date(s.getTime() + dur*60000).toISOString();
-    }
+  const date  = pick(v, ['Date','date']) || '';
+  const time  = pick(v, ['Time','Start Time','time']) || '';
+  const dur   = Number(pick(v, ['Duration','duration'])) || undefined;
 
-   const serviceName = pick(v, ['Service Name','serviceName','Name','name']) || 'Appointment';
-const proNameFromAppt = pick(v, ['Pro Name','Stylist','proName','stylistName']);
-const proNameFromBiz =
-  (v.Business && (v.Business.values?.['Pro Name'] || v.Business['Pro Name'] || v.Business.proName)) || '';
-const proName = proNameFromAppt || proNameFromBiz || '';
+  let startAt = pick(v, ['startISO','start','startAt']) || (date && time ? `${date}T${time}` : '');
+  let endAt   = pick(v, ['endISO','end','endAt']) || '';
+  if (!endAt && startAt && dur) {
+    const s = new Date(startAt);
+    if (!Number.isNaN(s.getTime())) endAt = new Date(s.getTime() + dur*60000).toISOString();
+  }
 
-const businessId = (v.Business && (v.Business._id || v.Business)) || '';
-const status = pick(v, ['Appointment Status','Status','status']) || 'booked';
+  const serviceName = pick(v, ['Service Name','serviceName','Name','name']) || 'Appointment';
 
-return {
-  _id,
-  date,
-  time,
-  duration: dur,
-  startAt,
-  endAt,
-  serviceName,
-  proName,
-  businessId,
-  status
+  // --- PRO NAME: search several shapes ---
+  // 1) Simple text fields on the appointment
+  const proNameFromText = pick(v, [
+    'Pro Name','proName',
+    'Stylist','stylistName',
+    'Professional','professionalName',
+    'Artist','artistName',
+    'Provider Name'
+  ]);
+
+  // 2) Nested reference like values.Pro = { values: {...} } or { firstName, lastName, name }
+  const proRef = v.Pro || v.Stylist || v.Professional || v['Pro Ref'] || v['Stylist Ref'];
+  let proNameFromRef = '';
+  if (proRef) {
+    const rv = proRef.values || proRef; // handle both shapes
+    const fn = rv?.firstName || rv?.['First Name'] || rv?.given_name || '';
+    const ln = rv?.lastName  || rv?.['Last Name']  || rv?.family_name || '';
+    const nm = rv?.name || rv?.fullName || '';
+    proNameFromRef = (fn || ln) ? `${fn} ${ln}`.trim() : (nm || '');
+  }
+
+  // 3) Sometimes Business carries a pro name
+  const b = v.Business;
+  const proNameFromBiz =
+    (b && (b.values?.['Pro Name'] || b.values?.proName || b['Pro Name'] || b.proName)) || '';
+
+// also fall back to the record creator (requires server to populate `createdBy`)
+const creator = row.createdBy;
+const proFromCreator = creator
+  ? (`${creator.firstName || ''} ${creator.lastName || ''}`.trim() || creator.name || '')
+  : '';
+
+const proName = (proNameFromText || proNameFromRef || proNameFromBiz || proFromCreator || '').trim();
+
+  const businessId = (b && (b._id || b)) || '';
+  const status = (pick(v, ['Appointment Status','Status','status']) || 'booked');
+
+  return {
+    _id: row._id,
+    date,
+    time,
+    duration: dur,
+    startAt,
+    endAt,
+    serviceName,
+    proName,          // <— renderer will use this
+    businessId,
+    status,
+    _raw: row         // keep raw in case you need to debug later
+  };
+  
 };
 
-  };
 
   async function fetchAndRenderClientAppointments() {
     try {
