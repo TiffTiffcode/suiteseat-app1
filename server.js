@@ -23,8 +23,10 @@ const cookieParser = require('cookie-parser');
 const MongoStore = require('connect-mongo');
 
 const app = express();
+// Mount uploads at /uploads
+app.set('trust proxy', 1); // good for Render/proxies
 app.use(express.json());
-
+app.use(cookieParser());
 
 const path = require('path');
 const servePublic = (name) => (req, res) =>
@@ -50,17 +52,6 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => console.log('🔌 socket disconnected', socket.id));
 });
 
-// Allow your frontend origins (add your Vercel domain later)
-// put this above routes
-const allowed = (process.env.CORS_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
-app.use(require('cors')({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true);             // allow curl/postman
-    if (!allowed.length || allowed.includes(origin)) return cb(null, true);
-    cb(new Error('Not allowed by CORS: ' + origin));
-  },
-  credentials: true
-}));
 
 // at top of server
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
@@ -81,13 +72,195 @@ const toObjectIdIfHex = (v) =>
     : v;
 
 
+connectDB().catch(err => {
+  console.error('❌ DB connect failed', err);
+  process.exit(1);
+});
 
-// Mount uploads at /uploads
-app.set('trust proxy', 1); // good for Render/proxies
+
 // --- View engine (only if you actually render EJS views) ---
 app.set("view engine", "ejs");
 app.set('views', path.join(__dirname, 'views'));
+const nodemailer = require('nodemailer');
 
+
+const mailer = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: String(process.env.SMTP_SECURE) === 'true',
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+});
+// server.js
+const { Resend } = require('resend');
+const { createEvent } = require('ics');
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+function to12h(hhmm = '00:00') {
+  const [H, M='0'] = String(hhmm).split(':');
+  let h = parseInt(H, 10), m = parseInt(M, 10);
+  const ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return `${h}:${String(m).padStart(2,'0')} ${ap}`;
+}
+function prettyDate(ymd = '2025-01-01') {
+  try {
+    const d = new Date(`${ymd}T00:00:00`);
+    return d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+  } catch { return ymd; }
+}
+function objIdFromRef(ref) {
+  if (!ref) return null;
+  const id = (typeof ref === 'object') ? (ref._id || ref.id) : ref;
+  try { return id ? new mongoose.Types.ObjectId(String(id)) : null; }
+  catch { return null; }
+}
+
+function makeIcsBuffer({ title, description='', location='', startISO, durationMin=60, organizerName='', organizerEmail='' }) {
+  const d = new Date(startISO);
+  return new Promise((resolve, reject) => {
+    createEvent({
+      start: [d.getFullYear(), d.getMonth()+1, d.getDate(), d.getHours(), d.getMinutes()],
+      duration: { minutes: durationMin },
+      title,
+      description,
+      location,
+      organizer: organizerEmail ? { name: organizerName || '', email: organizerEmail } : undefined,
+      status: 'CONFIRMED',
+      busyStatus: 'BUSY',
+    }, (err, value) => err ? reject(err) : resolve(Buffer.from(value)));
+  });
+}
+
+async function sendBookingEmailWithResend({ to, subject, html, icsBuffer, cc=[], bcc=[], replyTo='' }) {
+  const from = process.env.MAIL_FROM; // e.g. "Your Biz <bookings@yourdomain.com>"
+  const attachments = icsBuffer ? [{ filename: 'appointment.ics', content: icsBuffer }] : undefined;
+
+  return resend.emails.send({
+    from,
+    to,
+    subject,
+    html,
+    attachments,
+    cc: cc.length ? cc : undefined,
+    bcc: bcc.length ? bcc : undefined,
+    reply_to: replyTo || undefined,
+  });
+}
+
+
+// Return { slug: "business-slug" } for a Business record by its _id
+// --- Public: get a Business slug by its Record _id ---
+// Return { slug: "business-slug" } for a Business record by its _id
+app.get('/api/public/business-slug/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.json({ slug: '' });
+
+    const biz = await Record.findOne({ _id: id, deletedAt: null })
+      .select({ values: 1 })
+      .lean();
+
+    if (!biz) return res.status(404).json({ slug: '' });
+
+    // 1) Try existing slug fields
+    let slug =
+      biz?.values?.slug ||
+      biz?.values?.Slug ||
+      biz?.values?.['Business Slug'] ||
+      '';
+
+    // 2) If missing, derive from a name and persist
+    if (!slug) {
+      const name =
+        biz.values?.businessName ||
+        biz.values?.name ||
+        biz.values?.['Business Name'] ||
+        '';
+
+      if (!name) return res.json({ slug: '' }); // no name to derive from
+
+      slug = slugify(name);
+
+      // Optional: ensure uniqueness among Businesses (simple suffix)
+      const conflict = await Record.findOne({
+        _id: { $ne: biz._id },
+        deletedAt: null,
+        'values.slug': slug
+      }).lean();
+
+      if (conflict) slug = `${slug}-${biz._id.toString().slice(-4)}`;
+
+      // Save back so next lookups are instant
+      await Record.updateOne(
+        { _id: biz._id },
+        { $set: { 'values.slug': slug } }
+      );
+    }
+
+    res.json({ slug });
+  } catch (e) {
+    console.error('GET /api/public/business-slug failed:', e);
+    res.json({ slug: '' });
+  }
+});
+
+app.get('/api/public/booking-slug/by-business/:id', async (req, res) => {
+  try {
+    const bizId = String(req.params.id || '').trim();
+    if (!bizId) return res.json({ slug: '' });
+
+    // helpers to resolve datatypes by name
+    async function getDT(name) {
+      if (typeof getDataTypeByNameLoose === 'function') {
+        const dt = await getDataTypeByNameLoose(name);
+        return dt?._id || null;
+      }
+      return null;
+    }
+
+    const businessDT = await getDT('Business');
+    const pageDT     = await getDT('CustomBookingPage');
+
+    // fetch the Business to read selectedBookingPageId (if present)
+    const biz = await Record.findOne({
+      _id: bizId, deletedAt: null,
+      ...(businessDT ? { dataTypeId: businessDT } : {})
+    }).lean();
+
+    const selectedId = biz?.values?.selectedBookingPageId || '';
+
+    // find pages tied to this business by any of the common keys
+    const pages = await Record.find({
+      deletedAt: null,
+      ...(pageDT ? { dataTypeId: pageDT } : {}),
+      $or: [
+        { 'values.businessId': bizId },
+        { 'values.Business': bizId },
+        { 'values.ownerId': bizId }
+      ]
+    }).lean();
+
+    const isPublished = (v = {}) =>
+      v.published === true || v.Published === true ||
+      v['is Published'] === true ||
+      String(v.status || '').toLowerCase() === 'published';
+
+    // Prefer the selected + published one, else newest published
+    let chosen = pages.find(p => String(p._id) === String(selectedId) && isPublished(p.values));
+    if (!chosen) {
+      chosen = pages
+        .filter(p => isPublished(p.values))
+        .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))[0];
+    }
+
+    const slug = chosen?.values?.slug || chosen?.values?.Slug || '';
+    return res.json({ slug: slug || '' });
+  } catch (e) {
+    console.error('GET /api/public/booking-slug/by-business failed:', e);
+    res.json({ slug: '' });
+  }
+});
 
 app.post('/api/uploads/presign', async (req, res) => {
   try {
@@ -118,23 +291,47 @@ app.post('/api/uploads/presign', async (req, res) => {
   }
 });
 
+// Build allowlist from env + known subdomains
+const allowFromEnv = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+const allowStatic = [
+  'http://localhost:3000',        // Next.js dev
+  'https://www.suiteseat.io',     // booking (Next)
+  'https://app.suiteseat.io'      // dashboard (Next)
+];
 
 
-app.use(cookieParser());
+const ALLOWED_ORIGINS = Array.from(new Set([...allowStatic, ...allowFromEnv]));
+// CORS (single instance)
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // allow curl/Postman/SSR
+    return cb(null, ALLOWED_ORIGINS.includes(origin));
+  },
+  credentials: true
+}));
+
+
+// Session (single instance)
+const isProd = process.env.NODE_ENV === 'production';
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret',
   resave: false,
   saveUninitialized: false,
+  store: MongoStore.create({
+    mongoUrl: process.env.MONGODB_URI,
+    ttl: 60 * 60 * 24 * 30 // 30 days
+  }),
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: false, // set true in production over HTTPS
-    maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
-  },
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI,
-    ttl: 60 * 60 * 24 * 30,
-  }),
+    secure: isProd,                           // HTTPS in prod (requires trust proxy)
+    domain: isProd ? '.suiteseat.io' : undefined, // set ONLY in prod; break on localhost if set
+    maxAge: 1000 * 60 * 60 * 24 * 30
+  }
 }));
 
 ///////////////////////////////////
@@ -162,6 +359,47 @@ const upload = multer({
 //////////////////////////////////
 
 
+function objIdFromRef(ref) {
+  if (!ref) return null;
+  const id = (typeof ref === 'object') ? (ref._id || ref.id) : ref;
+  try { return id ? new mongoose.Types.ObjectId(String(id)) : null; }
+  catch { return null; }
+}
+
+async function enrichAppointment(rawValues) {
+  // Attach Business Owner + Pro Name from Business
+  const businessId = objIdFromRef(rawValues['Business']);
+  if (businessId) {
+    const bizDT = await DataType.findOne({ name: /Business/i, deletedAt: null }).lean();
+    if (bizDT) {
+      const biz = await Record.findOne({ _id: businessId, dataTypeId: bizDT._id, deletedAt: null }).lean();
+      if (biz) {
+        if (biz.createdBy && !rawValues['Business Owner']) {
+          rawValues['Business Owner'] = { _id: String(biz.createdBy) };
+        }
+        const pn = biz.values?.['Pro Name'] || biz.values?.proName || biz.values?.stylistName;
+        if (pn && !rawValues['Pro Name']) rawValues['Pro Name'] = pn;
+      }
+    }
+  }
+
+  // Attach Pro from Calendar if client didn't provide it
+  const calId = objIdFromRef(rawValues['Calendar']);
+  if (calId && !rawValues['Pro']) {
+    const calDT = await DataType.findOne({ name: /Calendar/i, deletedAt: null }).lean();
+    if (calDT) {
+      const cal = await Record.findOne({ _id: calId, dataTypeId: calDT._id, deletedAt: null }).lean();
+      const v = cal?.values || {};
+      const proLike = v.Pro || v['Pro Ref'] || v.Staff || v['Staff Ref'] || v.Professional || v.Provider || v.Owner;
+      const proId = proLike?._id || proLike?.id || (typeof proLike === 'string' ? proLike : null);
+      if (proId) rawValues['Pro'] = { _id: String(proId) };
+    }
+  }
+
+  return rawValues;
+}
+
+
 
 //////////////////////////////////////////////
 //User Authentication
@@ -169,16 +407,17 @@ const upload = multer({
 // Save profile updates (name, phone, etc.) + optional file upload
 app.post('/update-user-profile',
   ensureAuthenticated,
-  upload.single('profilePhoto'),   // field name must be "profilePhoto"
+  upload.single('profilePhoto'),
   async (req, res) => {
     try {
       const userId = req.session.userId;
-      const { firstName, lastName, phone, address, email } = req.body;
 
-      // Build update doc
+      // Grab previous values (for prevEmail match)
+      const prev = await AuthUser.findById(userId).lean();
+
+      const { firstName, lastName, phone, address, email } = req.body;
       const update = { firstName, lastName, phone, address, email };
 
-      // If a file was uploaded, expose it at /uploads/<filename>
       if (req.file) {
         update.profilePhoto = `/uploads/${req.file.filename}`;
       }
@@ -186,14 +425,21 @@ app.post('/update-user-profile',
       const user = await AuthUser.findByIdAndUpdate(userId, update, { new: true, lean: true });
       if (!user) return res.status(404).json({ message: 'User not found' });
 
+      // 🔁 Propagate to Client & Appointment records
+      const stats = await propagateProfileToCRM(
+        { userId, firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phone },
+        prev?.email
+      );
+
       // Return shape expected by the front-end
-      res.json({ user });
+      res.json({ user, propagated: stats });
     } catch (e) {
       console.error('POST /update-user-profile failed:', e);
       res.status(500).json({ message: 'Server error saving profile' });
     }
   }
 );
+
 
 app.get("/api/me", (req,res)=>{
   if (!req.session?.userId) return res.status(401).json({ loggedIn:false });
@@ -312,7 +558,7 @@ app.post('/signup', async (req, res) => {
 
   res.json({
     ok: true,
-    user: { _id: user._id, firstName, lastName, email, phone }
+    user: {  _id: String(user._id), firstName, lastName, email, phone }
   });
 });
 
@@ -349,14 +595,27 @@ app.post('/login', async (req, res) => {
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(401).json({ message: 'Invalid email or password' });
 
-  req.session.userId = user._id;
-  req.session.user = { email: user.email, name: user.name, roles: user.roles };
+  req.session.userId = String(user._id);
+  req.session.roles  = Array.isArray(user.roles) ? user.roles : [];
+  req.session.user   = {
+    _id:       String(user._id),
+    email:     user.email,
+    firstName: user.firstName || '',
+    lastName:  user.lastName  || ''
+  };
 
   res.json({
     ok: true,
-    user: { _id: user._id, firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phone }
+    user: {
+      _id: user._id,
+      firstName: user.firstName || '',
+      lastName:  user.lastName  || '',
+      email:     user.email,
+      phone:     user.phone
+    }
   });
 });
+
 
 app.get('/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
@@ -400,18 +659,56 @@ app.get('/check-login', async (req, res) => {
     if (!name && u.email) name = u.email.split('@')[0]; // last resort
     const safeFirst = (first || name || 'there').split(' ')[0];
 
+   req.session.user = req.session.user || {};
+    if (!req.session.user.firstName) req.session.user.firstName = first;
+    if (!req.session.user.lastName)  req.session.user.lastName  = last;
+    if (!req.session.user.email)     req.session.user.email     = u.email;
+
     res.json({
       loggedIn: true,
-      userId: String(u._id),
-      email: u.email || '',
-      firstName: safeFirst,
-      lastName: last || null,
-      name,
-      roles: u.roles || []
+      userId:   String(u._id),
+      email:    u.email || '',
+      firstName:first || '',
+      lastName: last  || '',
+      name, // ← include full name, useful if you want it
+      roles:   req.session.roles || []
     });
   } catch (e) {
     console.error('check-login error:', e);
     res.status(500).json({ loggedIn: false });
+  }
+});
+
+// server.js (or routes/auth.js)
+
+// Example login route that your front-end calls via API.login(email, pass)
+app.post('/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const auth = await AuthUser.findOne({ email: String(email).toLowerCase().trim() }).lean();
+    if (!auth) return res.status(401).json({ message: 'Invalid credentials' });
+
+    const ok = await bcrypt.compare(password, auth.passwordHash);
+    if (!ok) return res.status(401).json({ message: 'Invalid credentials' });
+
+    // ⬇️ THIS is the bit you were asking about
+req.session.userId = String(auth._id);
+req.session.roles  = Array.isArray(auth.roles) ? auth.roles : [];
+req.session.user   = { email: auth.email, firstName: auth.firstName || '', lastName: auth.lastName || '' };
+
+
+    res.json({
+      ok: true,
+      userId: String(auth._id),
+      email: auth.email,
+      firstName: auth.firstName || '',
+      lastName:  auth.lastName  || '',
+      roles: req.session.roles
+    });
+  } catch (e) {
+    console.error('/auth/login error', e);
+    res.status(500).json({ message: 'Login failed' });
   }
 });
 
@@ -791,19 +1088,25 @@ const RESERVED = new Set([
 
 
 // Public list of records by type, with simple field filters (e.g. &Business=<id>)
+// Public list of records by type...
 app.get('/public/records', async (req, res) => {
   try {
     const { dataType, limit = '500', skip = '0', sort } = req.query;
     if (!dataType) return res.status(400).json({ error: 'dataType required' });
 
     const dt = await getDataTypeByNameLoose(dataType);
-    if (!dt) return res.json([]); // no such type yet
+    if (!dt) return res.json([]);
 
     const where = { dataTypeId: dt._id, deletedAt: null };
 
-    // Treat any other query param as a values.<FieldName> = value filter
+    // Special-case _id
+    if (req.query._id) {
+      where._id = req.query._id;
+    }
+
+    // Treat any other param as values.<Field> filter
     for (const [k, v] of Object.entries(req.query)) {
-      if (['dataType','limit','skip','sort','ts'].includes(k)) continue;
+      if (['dataType','limit','skip','sort','ts','_id'].includes(k)) continue;
       if (v !== undefined && v !== '') where[`values.${k}`] = v;
     }
 
@@ -814,12 +1117,7 @@ app.get('/public/records', async (req, res) => {
     const skp = Math.max(parseInt(skip, 10) || 0, 0);
 
     const rows = await Record.find(where).sort(order).skip(skp).limit(lim).lean();
-
-    res.json(rows.map(r => ({
-      _id: String(r._id),
-      values: r.values || {},
-      deletedAt: r.deletedAt || null,
-    })));
+    res.json(rows.map(r => ({ _id: String(r._id), values: r.values || {}, deletedAt: r.deletedAt || null })));
   } catch (e) {
     console.error('GET /public/records failed:', e);
     res.status(500).json({ error: e.message });
@@ -996,7 +1294,10 @@ app.post('/api/records/:typeName', ensureAuthenticated, async (req, res) => {
         }
       }
     }
-
+    // Enrich Appointments from Business/Calendar/Client before normalize
+    if (/^appointment$/i.test(typeName)) {
+      await enrichAppointment(rawValues);
+    }
     // Normalize & persist (make sure slug survives normalization)
     const values = await normalizeValuesForType(dt._id, rawValues);
     if (/^business$/i.test(typeName)) {
@@ -1020,39 +1321,61 @@ app.post('/api/records/:typeName', ensureAuthenticated, async (req, res) => {
 
 
 
+// --- GET one record: GET /api/records/:typeName/:id ---
+// GET one record by id (pros/admins can read any)
+// GET one record by id (pros/admins can read any)
+// helper to pull an id out of {_id} / {id} / string
+function xId(val) {
+  if (!val) return null;
+  if (typeof val === 'string') return val;
+  if (val._id) return String(val._id);
+  if (val.id)  return String(val.id);
+  return null;
+}
 
-app.get('/api/records/:typeName', ensureAuthenticated, async (req, res) => {
-  try {
-    const dt = await getDataTypeByNameLoose(req.params.typeName);
-    if (!dt) return res.status(404).json({ error: `Data type "${req.params.typeName}" not found` });
+async function canReadAppointment(session, apptRec) {
+  const uid   = String(session.userId || '');
+  const roles = session.roles || [];
+  if (!uid) return false;
+  if (String(apptRec.createdBy) === uid) return true;
+  if (roles.includes('admin')) return true;
 
-    const base = { dataTypeId: dt._id, createdBy: req.session.userId, deletedAt: null };
+  // Pro on the appointment
+  const proId = xId(
+    apptRec.values?.Pro ||
+    apptRec.values?.['Pro Ref'] ||
+    apptRec.values?.Staff ||
+    apptRec.values?.['Staff Ref']
+  );
+  if (proId && proId === uid) return true;
 
-    let where = {};
-    if (req.query.where) {
-      try { where = JSON.parse(req.query.where); } catch {}
-      where = await normalizeWhereForType(dt._id, where);
+  // Pro via the Calendar
+  const calId = xId(apptRec.values?.Calendar);
+  if (calId) {
+    const calDT = await DataType.findOne({ name: /Calendar/i, deletedAt: null }).lean();
+    if (calDT) {
+      const cal = await Record.findOne({ _id: calId, dataTypeId: calDT._id, deletedAt: null }).lean();
+      const calProId = xId(
+        cal?.values?.Pro ||
+        cal?.values?.['Pro Ref'] ||
+        cal?.values?.Staff ||
+        cal?.values?.['Staff Ref']
+      );
+      if (calProId && calProId === uid) return true;
     }
-
-    let sort = { createdAt: -1 };
-    if (req.query.sort) {
-      try {
-        const rawSort = JSON.parse(req.query.sort);
-        sort = await normalizeSortForType(dt._id, rawSort);
-      } catch {}
-    }
-
-    const limit = Math.min(parseInt(req.query.limit || '100', 10), 500);
-    const skip  = Math.max(parseInt(req.query.skip  || '0',   10), 0);
-
-    const items = await Record.find({ ...base, ...where }).sort(sort).skip(skip).limit(limit);
-    res.json(items);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
   }
-});
 
-
+  // Business owner
+  const bizId = xId(apptRec.values?.Business);
+  if (bizId) {
+    const bizDT = await DataType.findOne({ name: /Business/i, deletedAt: null }).lean();
+    if (bizDT) {
+      const biz = await Record.findOne({ _id: bizId, dataTypeId: bizDT._id, deletedAt: null }).lean();
+      if (biz && String(biz.createdBy) === uid) return true;
+    }
+  }
+  return false;
+}
 
 // --- GET one record: GET /api/records/:typeName/:id ---
 app.get('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) => {
@@ -1060,14 +1383,26 @@ app.get('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) => {
     const dt = await getDataTypeByName(req.params.typeName);
     if (!dt) return res.status(404).json({ error: `Data type "${req.params.typeName}" not found` });
 
+    // ⚠️ removed createdBy filter here
     const item = await Record.findOne({
       _id: req.params.id,
       dataTypeId: dt._id,
-      createdBy: req.session.userId,
       deletedAt: null
     });
 
     if (!item) return res.status(404).json({ error: 'Not found' });
+
+    // Only gate by role/ownership for Appointments
+    if (/Appointment/i.test(dt.name)) {
+      const ok = await canReadAppointment(req.session, item);
+      if (!ok) return res.status(403).json({ error: 'Forbidden' });
+    } else {
+      // for other types keep creator restriction if you want:
+      if (String(item.createdBy) !== String(req.session.userId) && !(req.session.roles||[]).includes('admin')) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
     res.json(item);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1075,97 +1410,188 @@ app.get('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) => {
 });
 
 
-// --- UPDATE record (replace or merge values): PATCH /api/records/:typeName/:id ---
-// Send { values: { "Field Label": newValue, ... } }
-// Send { values: { "Field Label": newValue, ... } }
-// Send { values: { "Field Label": newValue, ... } }
-app.patch('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) => {
+
+app.get('/api/records/:typeName', ensureAuthenticated, async (req, res) => {
   try {
-    const typeName = req.params.typeName;
-    const id = req.params.id;
+    const dt = await getDataTypeByNameLoose(req.params.typeName);
+    if (!dt) return res.status(404).json({ error: `Data type "${req.params.typeName}" not found` });
 
-    const dt = await getDataTypeByNameLoose(typeName);
-    if (!dt) return res.status(404).json({ error: `Data type "${typeName}" not found` });
+    const roles  = req.session?.roles || [];
+    const isPriv = roles.includes('pro') || roles.includes('admin');
 
-    const rawValues = req.body?.values;
-    if (!rawValues || typeof rawValues !== 'object') {
-      return res.status(400).json({ error: 'values (object) is required' });
+    const base = { dataTypeId: dt._id, deletedAt: null };
+    if (!isPriv) base.createdBy = req.session.userId;
+
+    let where = {};
+    if (req.query.where) { try { where = JSON.parse(req.query.where); } catch {} }
+    where = await normalizeWhereForType(dt._id, where);
+
+    let sort = { createdAt: -1 };
+    if (req.query.sort) { try { sort = await normalizeSortForType(dt._id, JSON.parse(req.query.sort)); } catch {} }
+
+    const limit = Math.min(parseInt(req.query.limit || '100', 10), 500);
+    const skip  = Math.max(parseInt(req.query.skip  || '0',   10), 0);
+
+    console.log('[GET many]', { type: req.params.typeName, roles, isPriv });
+    const items = await Record.find({ ...base, ...where }).sort(sort).skip(skip).limit(limit);
+    res.json(items);
+  } catch (e) {
+    console.error('GET /api/records error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+function oid(x) {
+  if (!x) return null;
+  try { return new mongoose.Types.ObjectId(String(x)); } catch { return null; }
+}
+
+async function propagateProfileToCRM({ userId, firstName, lastName, email, phone }, prevEmail = '') {
+  try {
+    const clientDT = await DataType.findOne({ name: /Client/i, deletedAt: null }).lean();
+    const apptDT   = await DataType.findOne({ name: /Appointment/i, deletedAt: null }).lean();
+    const userDT   = await DataType.findOne({ name: /User/i,    deletedAt: null }).lean();
+    if (!clientDT) return { clients: 0, appts: 0 };
+
+    const norm = s => (s || '').trim();
+    const em   = norm(email).toLowerCase();
+    const pem  = norm(prevEmail).toLowerCase();
+
+    // 🔎 Resolve the "User" DataType record(s) by email (not AuthUser _id)
+    let userRecIds = [];
+    if (userDT && (em || pem)) {
+      const userRecs = await Record.find({
+        dataTypeId: userDT._id,
+        deletedAt: null,
+        'values.Email': { $in: [em, pem].filter(Boolean) }
+      }, { _id: 1 }).lean();
+      userRecIds = userRecs.map(r => r._id);
     }
 
-    // --- BUSINESS: keep slug unique if name/slug changes (before normalize) ---
-    if (/^business$/i.test(typeName)) {
-      const existing = await Record.findOne({
-        _id: id,
-        dataTypeId: dt._id,
-        createdBy: req.session.userId,
-        deletedAt: null,
-      }).lean();
-      if (!existing) return res.status(404).json({ error: 'Not found' });
+    // 1) Find Client records via Linked User (User record id) OR Email (old/new)
+    const clientMatch = {
+      dataTypeId: clientDT._id,
+      deletedAt: null,
+      $or: [
+        // Linked User references a User record (all shapes)
+        ...(userRecIds.length ? [
+          { 'values.Linked User':      { $in: userRecIds } },
+          { 'values.Linked User._id':  { $in: userRecIds.map(String) } },
+          { 'values.Linked User':      { $in: userRecIds.map(String) } },
+        ] : []),
+        // Email match (old/new)
+        ...(em  ? [{ 'values.Email': em  }] : []),
+        ...(pem ? [{ 'values.Email': pem }] : []),
+      ]
+    };
 
-      const currentSlug =
-        existing.values?.slug || existing.values?.businessSlug || '';
+    const clients = await Record.find(clientMatch).lean();
+    if (!clients.length) return { clients: 0, appts: 0 };
 
-      const incomingSlug = String(rawValues.slug || rawValues.businessSlug || '').trim();
-      const incomingName = (
-        rawValues.businessName ||
-        rawValues['Business Name'] ||
-        rawValues.name || ''
-      ).trim();
+    const clientIds = clients.map(c => c._id);
 
-      let desiredSlug = incomingSlug || currentSlug;
-      if (!desiredSlug && incomingName) desiredSlug = slugify(incomingName);
+    // 2) Update Clients if different
+    for (const c of clients) {
+      const v = c.values || {};
+      const setOps = {};
+      if (firstName && norm(v['First Name'])   !== norm(firstName)) setOps['values.First Name']   = firstName;
+      if (lastName  && norm(v['Last Name'])    !== norm(lastName))  setOps['values.Last Name']    = lastName;
+      if (phone     && norm(v['Phone Number']) !== norm(phone))     setOps['values.Phone Number'] = phone;
+      if (em        && norm(v['Email']).toLowerCase() !== em)       setOps['values.Email']        = em;
 
-      if (desiredSlug && desiredSlug !== currentSlug) {
-        const unique = await ensureUniqueBusinessSlug(slugify(desiredSlug), id);
-        rawValues.slug = unique;
-        rawValues.businessSlug = unique;
+      const full = [firstName, lastName].filter(Boolean).join(' ').trim();
+      if (full && norm(v['Client Name']) !== norm(full))            setOps['values.Client Name']  = full;
+
+      if (Object.keys(setOps).length) {
+        await Record.updateOne({ _id: c._id }, { $set: setOps });
       }
     }
 
+    // 3) Update denormalized fields on Appointments that reference those clients
+    if (!apptDT) return { clients: clients.length, appts: 0 };
+
+    const setAppt = {
+      ...(firstName ? { 'values.Client First Name': firstName } : {}),
+      ...(lastName  ? { 'values.Client Last Name':  lastName  } : {}),
+      ...(em        ? { 'values.Client Email':      em        } : {}),
+    };
+    const full = [firstName, lastName].filter(Boolean).join(' ').trim();
+    if (full) setAppt['values.Client Name'] = full;
+
+    if (Object.keys(setAppt).length) {
+      const r = await Record.updateMany(
+        {
+          dataTypeId: apptDT._id,
+          deletedAt: null,
+          $or: [
+            { 'values.Client':       { $in: clientIds } },                 // ObjectId stored directly
+            { 'values.Client._id':   { $in: clientIds.map(String) } },     // {_id:"..."}
+            { 'values.Client':       { $in: clientIds.map(String) } },     // plain string id
+          ]
+        },
+        { $set: setAppt }
+      );
+      return { clients: clients.length, appts: r.modifiedCount || r.nModified || 0 };
+    }
+
+    return { clients: clients.length, appts: 0 };
+  } catch (e) {
+    console.error('[propagateProfileToCRM] error:', e);
+    return { clients: 0, appts: 0 };
+  }
+}
+
+
+// --- UPDATE record (replace or merge values): PATCH /api/records/:typeName/:id ---
+app.patch('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) => {
+  try {
+    const typeName = req.params.typeName;
+    const dt = await getDataTypeByNameLoose(typeName);
+    if (!dt) return res.status(404).json({ error: `Data type "${typeName}" not found` });
+
+    const roles = req.session?.roles || [];
+    const isPriv = roles.includes('pro') || roles.includes('admin');
+
+    const rawValues = req.body?.values || {};
+    if (/^appointment$/i.test(typeName)) await enrichAppointment(rawValues);
     const values = await normalizeValuesForType(dt._id, rawValues);
-    if (/^business$/i.test(typeName)) {
-      if (rawValues.slug) values.slug = rawValues.slug;
-      if (rawValues.businessSlug) values.businessSlug = rawValues.businessSlug;
-    }
 
-    const setOps = {};
-    for (const [k, v] of Object.entries(values)) {
-      setOps[`values.${k}`] = v;
-    }
+    const setOps = Object.fromEntries(Object.entries(values).map(([k,v]) => [`values.${k}`, v]));
 
-    const updated = await Record.findOneAndUpdate(
-      { _id: id, dataTypeId: dt._id, createdBy: req.session.userId, deletedAt: null },
-      { $set: setOps },
-      { new: true }
-    );
+    const q = { _id: req.params.id, dataTypeId: dt._id, deletedAt: null };
+    if (!isPriv) q.createdBy = req.session.userId;   // gate only non-privileged
 
+    const updated = await Record.findOneAndUpdate(q, { $set: setOps }, { new: true });
     if (!updated) return res.status(404).json({ error: 'Not found' });
     res.json(updated);
   } catch (e) {
-    console.error('PATCH /api/records error:', e);
+    console.error('PATCH error', e);
     res.status(500).json({ error: e.message });
   }
 });
 
 // --- SOFT DELETE record: DELETE /api/records/:typeName/:id ---
+
 app.delete('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) => {
   try {
-    const dt = await getDataTypeByName(req.params.typeName);
+    const dt = await getDataTypeByNameLoose(req.params.typeName);
     if (!dt) return res.status(404).json({ error: `Data type "${req.params.typeName}" not found` });
 
-    const updated = await Record.findOneAndUpdate(
-      { _id: req.params.id, dataTypeId: dt._id, createdBy: req.session.userId, deletedAt: null },
-      { $set: { deletedAt: new Date() } },
-      { new: true }
-    );
+    const roles = req.session?.roles || [];
+    const isPriv = roles.includes('pro') || roles.includes('admin');
 
+    const q = { _id: req.params.id, dataTypeId: dt._id, deletedAt: null };
+    if (!isPriv) q.createdBy = req.session.userId;
+
+    const updated = await Record.findOneAndUpdate(q, { $set: { deletedAt: new Date() } }, { new: true });
     if (!updated) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
   } catch (e) {
+    console.error('DELETE error', e);
     res.status(500).json({ error: e.message });
   }
 });
-
 // 1) Upload a single file, return a URL
 app.post('/api/upload', ensureAuthenticated, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'file required' });
@@ -1310,7 +1736,129 @@ app.get('/api/public/booking-page-by-slug/:slug', async (req,res) => {
 });
 
 
+//send email confirmation to clients after booking an appointment
+// POST /api/appointments/:id/send-confirmation  (Resend)
+app.post('/api/appointments/:id/send-confirmation', async (req, res) => {
+  try {
+    const id = String(req.params.id || '');
+    if (!id) return res.status(400).json({ message: 'Missing id' });
 
+    const appt = await Record.findById(id).lean();
+    if (!appt) return res.status(404).json({ message: 'Appointment not found' });
+    const v = appt.values || {};
+
+    // pull related labels
+    const bizId  = objIdFromRef(v['Business']);
+    const serv   = Array.isArray(v['Service(s)']) ? v['Service(s)'][0] : v['Service(s)'];
+    const servId = objIdFromRef(serv);
+
+    const clientEmail = (v['Client Email'] || v['Email'] || '').trim();
+    const clientName  = (v['Client Name']
+                      || [v['Client First Name'], v['Client Last Name']].filter(Boolean).join(' ').trim()
+                      || '').trim();
+    if (!clientEmail) return res.status(400).json({ message: 'No client email on record' });
+
+    let businessName = '';
+    let locationText = '';
+    if (bizId) {
+      const biz = await Record.findById(bizId).lean();
+      const bv  = biz?.values || {};
+      businessName = bv['Business Name'] || bv['Name'] || bv['businessName'] || '';
+      locationText = bv['Address'] || bv['Location'] || '';
+    }
+
+    let serviceName = 'Appointment';
+    if (servId) {
+      const srec = await Record.findById(servId).lean();
+      const sv   = srec?.values || {};
+      serviceName = sv['Service Name'] || sv['Name'] || serviceName;
+    }
+
+    const date = v['Date'];        // "YYYY-MM-DD"
+    const time = v['Time'];        // "HH:MM" 24h
+    const dur  = Number(v['Duration'] ?? 60) || 60;
+
+    const subject = `Your ${serviceName} on ${prettyDate(date)} at ${to12h(time)}`;
+    const manageUrl = `${process.env.PUBLIC_BASE_URL || ''}/manage/${appt._id}`; // adjust if you have a real page
+
+    const html = `
+      <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.45">
+        <p>Hi ${clientName || 'there'},</p>
+        <p>Thanks for booking <strong>${serviceName}</strong> with <strong>${businessName}</strong>.</p>
+        <p><strong>When:</strong> ${prettyDate(date)} at ${to12h(time)} (${dur} min)<br/>
+           ${locationText ? `<strong>Where:</strong> ${locationText}<br/>` : ''}
+           <a href="${manageUrl}">Manage your appointment</a>
+        </p>
+        <p>We attached a calendar invite so you can add this to your calendar.</p>
+        <p>See you soon!</p>
+      </div>
+    `;
+
+    let icsBuffer = null;
+    try {
+      icsBuffer = await makeIcsBuffer({
+        title: `${serviceName} — ${businessName}`,
+        description: v['Note'] || '',
+        location: locationText,
+        startISO: new Date(`${date}T${time}:00`),
+        durationMin: dur,
+        organizerName: businessName,
+        organizerEmail: (process.env.MAIL_FROM || '').match(/<([^>]+)>/)?.[1] || process.env.MAIL_FROM
+      });
+    } catch (e) {
+      console.warn('ICS generation failed:', e);
+    }
+
+    await sendBookingEmailWithResend({
+      to: clientEmail,
+      subject,
+      html,
+      icsBuffer,
+      // cc: ['pro@yourdomain.com'],       // optional
+      // replyTo: 'replies@yourdomain.com' // optional
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('send-confirmation (Resend) failed:', e);
+    res.status(500).json({ message: 'Email failed' });
+  }
+});
+
+
+app.post('/api/appointments/book', async (req, res) => {
+  try {
+    const values = req.body?.values || {};
+    if (!values['Business'] || !values['Calendar'] || !values['Date'] || !values['Time']) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    // keep your enrichment
+    await enrichAppointment(values);
+
+    const apptDT = await getDataTypeByNameLoose('Appointment');
+    const rec = await Record.create({
+      dataTypeId: apptDT?._id,
+      values,
+      createdBy: req.session.userId || null
+    });
+
+    // reuse the sender above:
+    req.params.id = String(rec._id);
+    await (async () => {
+      // call the same logic inline instead of HTTP hopping
+      const fakeReq = { params:{ id: req.params.id } };
+      const fakeRes = { json:()=>{}, status:()=>({ json:()=>{} }) };
+      // Easiest: directly call the function body from the other route,
+      // or extract that logic into a helper and call it here.
+    })();
+
+    res.status(201).json(rec);
+  } catch (e) {
+    console.error('book route failed:', e);
+    res.status(500).json({ message: 'Booking failed' });
+  }
+});
 
 
 

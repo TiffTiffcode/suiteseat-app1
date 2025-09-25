@@ -358,6 +358,10 @@ body {
   margin-bottom: 15px;
   box-shadow: 0 2px 6px rgba(0,0,0,0.05);
 }
+/* add to your CSS */
+.appointment-card { cursor: pointer; }
+.appointment-card .appointment-actions { cursor: default; }
+
 .pro-card {
   background: #efb37c;
   color: white;
@@ -381,6 +385,38 @@ body {
   display: flex;
   align-items: center;
     padding-right: 12px;
+}
+
+/* Make cards feel clickable only when they have a destination */
+.appointment-card[data-business-slug], 
+.appointment-card[data-href] {
+  cursor: pointer;
+  transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease, background-color .18s ease;
+  border: 1px solid #e6e6e6;
+  border-radius: 12px;
+  background: #fff;
+}
+
+/* Hover + keyboard focus highlight */
+.appointment-card[data-business-slug]:hover,
+.appointment-card[data-href]:hover,
+.appointment-card[data-business-slug]:focus-within,
+.appointment-card[data-href]:focus-within {
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+  transform: translateY(-2px);
+  border-color: #d0d0d0;
+  background: #fcfcff;
+}
+
+/* Optional: make the title feel interactive */
+.appointment-card:hover .appointment-info h3 {
+  text-decoration: underline;
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .appointment-card { transition: box-shadow .18s ease, border-color .18s ease, background-color .18s ease; }
+  .appointment-card:hover { transform: none; }
 }
 
 .cancel-appointment-btn {

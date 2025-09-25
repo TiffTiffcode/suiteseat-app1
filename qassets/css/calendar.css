@@ -415,6 +415,7 @@ body.popup-open {
   grid-template-columns: repeat(7, 1fr); /* 7 days */
   flex: 1;
   position: relative;
+  width: 100%; 
   border-left: 1px solid #ccc;
 }
 
@@ -534,13 +535,21 @@ body.popup-open {
 /* Appointment*/
 .appointment-card {
   position: absolute;
-  width: 14.28%;
+   transition: transform .06s ease, box-shadow .2s ease, border-color .2s ease;
   background: #efb47c30;
   border: 1px solid #ccc;
   font-size: 12px;
-  padding: 4px;
+  padding: 4px 6px;
   box-sizing: border-box;
   z-index: 5;
+    margin: 0;
+     overflow: hidden;
+}
+.appointment-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0,0,0,.12);
+  border-color: #EFB37C;
+  background: #FFF6EC;
 }
 
 .clickable-client {
@@ -700,3 +709,9 @@ body.popup-open {
   .day-date   { font-size: 11px; }
   .appointment-card{ font-size: 11px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 }
+
+
+
+
+/* or hide Delete globally */
+ #delete-appointment-btn { display: none !important; } 

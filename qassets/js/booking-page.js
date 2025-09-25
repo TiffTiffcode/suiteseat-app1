@@ -1,3 +1,5 @@
+
+
 // ---- Local date helpers (no timezone drift) ----
 function parseYMDLocal(ymd){ const [y,m,d]=(ymd||"").split("-").map(Number); return new Date(y,(m||1)-1,d||1,0,0,0,0); }
 function toYMDLocal(date){ const y=date.getFullYear(); const m=String(date.getMonth()+1).padStart(2,"0"); const d=String(date.getDate()).padStart(2,"0"); return `${y}-${m}-${d}`; }
@@ -18,6 +20,53 @@ window.toUrl = window.toUrl || function toUrl(v){
   v = String(v);
   return (/^https?:\/\//i.test(v) || v.startsWith("/")) ? v : `/uploads/${v.replace(/^\/+/, "")}`;
 };
+// Pull an id out of a string or a {_id} / {id} ref
+function idOf(x) {
+  if (!x) return "";
+  return (typeof x === "object") ? (x._id || x.id || "") : String(x);
+}
+// normalize ref → id
+const refId = (x) => (x && typeof x === "object") ? (x._id || x.id || "") : (x || "");
+
+// read a pro-ish reference from a Calendar row (values or raw)
+function extractProUserId(calendarRow) {
+  const v = calendarRow?.values || calendarRow || {};
+  const proLike =
+    v.Pro || v['Pro Ref'] ||
+    v.Staff || v['Staff Ref'] ||
+    v.Professional || v.Provider || v.Owner ||
+    v['Pro User Id'] || v.proUserId;   // if you chose to expose a public id field
+  const id = refId(proLike);
+  return id || "";
+}
+function setSelectedCalendar(calId) {
+  STATE.selected.calendarId = calId;
+  const row = window.CALENDAR_BY_ID?.[String(calId)];
+  STATE.selected.proUserId  = row ? extractProUserId(row) : "";
+  console.log("[booking] selected calendar", { calId, proUserId: STATE.selected.proUserId });
+}
+
+function getClientName(row) {
+  const v = row?.values || row || {};
+  // 1) Denormalized on the Appointment
+  const dn = (v["Client Name"] || "").trim();
+  if (dn) return dn;
+  const fn = (v["Client First Name"] || "").trim();
+  const ln = (v["Client Last Name"]  || "").trim();
+  if (fn || ln) return `${fn} ${ln}`.trim();
+
+  // 2) Expanded Client ref (when includeRefField=1)
+  const c = v.Client || v["Client"];
+  const cv = c?.values || {};
+  const efn = (cv?.["First Name"] || cv?.firstName || "").trim();
+  const eln = (cv?.["Last Name"]  || cv?.lastName  || "").trim();
+  if (efn || eln) return `${efn} ${eln}`.trim();
+
+  // 3) Email fallback
+  const em = (v["Client Email"] || cv?.Email || "").trim();
+  if (em) return em;
+  return "(No client)";
+}
 
 document.addEventListener("DOMContentLoaded", async () => {
   const slug = location.pathname.replace(/^\/+/, "").split("/")[0];
@@ -45,6 +94,40 @@ document.addEventListener("DOMContentLoaded", async () => {
     window.businessData       = { _id: biz._id, ...v };
     window.selectedBusinessId = biz._id;
     STATE.businessId          = biz._id;
+// Resolve the business owner/creator id from the Business doc we just fetched
+STATE.ownerUserId =
+  idOf(biz.createdBy) ||
+  idOf((v || {})["Created By"]) ||
+  idOf((v || {}).createdBy)     ||
+  idOf((v || {}).Owner)         || idOf((v || {})["Owner"]) ||
+  idOf((v || {}).User)          || idOf((v || {})["User"])  ||
+  idOf((v || {})["Pro User"])   || idOf((v || {}).Pro)      ||
+  null;
+
+// If the public JSON hides it, try a private fetch that includes createdBy
+if (!STATE.ownerUserId) {
+  try {
+    const r = await fetch(`/api/records/Business/${encodeURIComponent(biz._id)}?includeCreatedBy=1`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store'
+    });
+    if (r.ok) {
+      const full = await r.json();
+      const fv = full.values || {};
+      STATE.ownerUserId =
+        idOf(full.createdBy) ||
+        idOf(fv["Created By"]) || idOf(fv.createdBy) ||
+        idOf(fv.Owner) || idOf(fv["Owner"]) ||
+        idOf(fv.User)  || idOf(fv["User"])  ||
+        null;
+    }
+  } catch (e) {
+    console.debug('[biz owner lookup]', e);
+  }
+}
+
+console.log('[booking] biz/owner', { bizId: STATE.businessId, ownerUserId: STATE.ownerUserId });
 
     // title + subtitle
     const bizName = v.businessName || v.name || v["Business Name"] || "Business";
@@ -85,49 +168,37 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
  // ---- Calendars load with auto-advance when there is exactly one ----
-let calendars = await loadCalendarsForBusiness(biz._id); // your function
+// ---- Calendars load with auto-advance when there is exactly one ----
+let calendars = await loadCalendarsForBusiness(biz._id);
 if (!Array.isArray(calendars)) calendars = [];
 
+// index calendars so setSelectedCalendar can look up the pro
+window.CALENDAR_BY_ID = Object.create(null);
+calendars.forEach(c => {
+  const id = String(c._id || c.id || c.calendarId);
+  window.CALENDAR_BY_ID[id] = c;
+});
+
 if (calendars.length === 1) {
-  // pick the only calendar
   const onlyCal = calendars[0];
   const calId = onlyCal._id || onlyCal.id || onlyCal.calendarId;
 
-  // hide the whole calendar section
   hide(getCalendarSectionEl());
 
-  // set selection
-  window.STATE = window.STATE || {};
-  window.STATE.selected = window.STATE.selected || {};
-  window.STATE.selected.calendarId = calId;
+  // ✅ this is the line you were looking for
+  setSelectedCalendar(calId);
 
-  // load categories for the only calendar
   const categories = await getCategoriesForCalendar(biz._id, calId);
-
   if (typeof renderCategories === 'function') {
     renderCategories(categories);
     show(document.getElementById('section-cats'));
   } else {
     simpleRenderCategories(categories);
   }
-
-  // (Optional) If there is exactly one category, skip that step too:
-  /*
-  if (categories.length === 1) {
-    const onlyCat = categories[0];
-    window.STATE.selected.categoryId = onlyCat._id || onlyCat.id;
-    if (typeof onCategorySelected === 'function') {
-      await onCategorySelected(window.STATE.selected.categoryId);
-    }
-    // hide(document.getElementById('section-cats'));
-  }
-  */
-
 } else {
-  // multiple calendars → make sure the calendar section is visible
   show(getCalendarSectionEl());
-  // NOTE: loadCalendarsForBusiness already called renderCalendars,
-  // so we DON'T call renderCalendars again here.
+  // (if you have a UI control where the user picks a calendar,
+  // call setSelectedCalendar(chosenId) in that change/click handler)
 }
 
 
@@ -233,8 +304,7 @@ async function publicList(dataType, filters = {}) {
   return Array.isArray(rows) ? rows : [];
 }
 
-// pull an id out of either a string or a { _id } ref
-function refId(x) { return (x && typeof x === "object" && x._id) ? x._id : x; }
+
 
 // tolerant value getter: tries a bunch of possible label spellings (incl. trailing space)
 function pick(v, keys) {
@@ -390,8 +460,10 @@ let CURRENT_SERVICES = [];
 
 // ------- RENDERERS -------
 //New 
+// Ensure a global STATE exists somewhere near the top
+window.STATE = window.STATE || { user:{}, selected:{}, calendars:[], calById:null, businessId:null };
+
 // ---- CALENDAR HELPERS ----
-// ---- CALENDAR HELPERS (replace your versions with these) ----
 async function loadCalendarsForBusiness(businessId) {
   // Try values.Business first, then values.businessId
   let calendars = await fetchCalendars("Business", businessId);
@@ -399,8 +471,19 @@ async function loadCalendarsForBusiness(businessId) {
     calendars = await fetchCalendars("businessId", businessId);
   }
   console.log("📅 calendars loaded:", calendars.length);
-  renderCalendars(calendars);
-  return calendars;
+
+  // ✅ Build the cache BEFORE render/return (use `calendars`, not `rows`)
+  STATE.calendars = (calendars || []).map(r => ({
+    _id: String(r._id || r.id),
+    values: r.values || r
+  }));
+  STATE.calById = Object.fromEntries(
+    STATE.calendars.map(c => [String(c._id), c])
+  );
+
+  // If your renderer expects the same shape, pass STATE.calendars
+  renderCalendars(STATE.calendars);
+  return STATE.calendars;
 }
 
 async function fetchCalendars(key, val) {
@@ -439,6 +522,35 @@ function renderCalendars(calendars) {
     `;
     el.addEventListener("click", () => onSelectCalendar(cal));
     wrap.appendChild(el);
+  });
+}
+async function onSelectCalendar(cal) {
+  const calId = String(cal._id || cal.id || cal.calendarId);
+
+  // ✅ set selected calendar + cache its pro id
+  setSelectedCalendar(calId);
+
+  // move to the next step in the flow
+  hide(getCalendarSectionEl());
+
+  // load categories for this calendar
+  const categories = await getCategoriesForCalendar(STATE.businessId, calId);
+  if (typeof renderCategories === 'function') {
+    renderCategories(categories);
+    show(document.getElementById('section-cats'));
+  } else {
+    simpleRenderCategories(categories);
+  }
+
+  // (optional) clear downstream selections
+  STATE.selected.categoryId = null;
+  STATE.selected.serviceIds = [];
+  STATE.selected.dateISO = null;
+  STATE.selected.timeHHMM = null;
+
+  console.log("[booking] calendar chosen", {
+    calId,
+    proUserId: STATE.selected.proUserId
   });
 }
 
@@ -804,11 +916,7 @@ async function loadServicesForCategory(businessId, calendarId, categoryId) {
   });
 }
 
-// Returns a flat array like: {_id, serviceName, duration, price, businessId, calendarId, imageUrl, isDeleted}
 
-function refId(x) {
-  return (x && typeof x === "object" && x._id) ? x._id : x;
-}
 
 async function fetchCombo(dataType, kv) {
   const qs = new URLSearchParams({ dataType });
@@ -1219,8 +1327,7 @@ async function onSelectDate(dateISO, cell) {
   scrollToTimeslots();  // 👈 scroll down to the slots
 }
 
-// --- normalize helpers ---
-function refId(x) { return (x && typeof x === "object" && x._id) ? x._id : x; }
+
 
 // Local-safe date-only helpers
 function parseYMDLocal(ymd) {
@@ -1260,6 +1367,89 @@ function isCanceled(v) {
   return flag === true || flag === "true";
 }
 
+// ====== PATCH: ensureClientIdForBooking (REPLACE WHOLE FUNCTION) ======
+async function ensureClientIdForBooking({ businessId, email, firstName, lastName, phone }) {
+  if (!businessId || !email) return { clientId: null, createdNew: false };
+
+  async function query(where) {
+    const qs = new URLSearchParams({
+      where: JSON.stringify(where),
+      limit: '5',
+      ts: Date.now().toString()
+    });
+    const r = await fetch(`/api/records/Client?${qs}`, {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (!r.ok) return [];
+    return r.json();
+  }
+
+  // Try both shapes for the Business reference
+  let rows = await query({ "Email": email, "Business": businessId });
+  if (!rows.length) rows = await query({ "Email": email, "Business": { _id: businessId } });
+
+  // Pin the one that truly matches this business
+  const found = rows.find(r => {
+    const b = r?.values?.["Business"];
+    return typeof b === 'string'
+      ? b === businessId
+      : String(b?._id) === String(businessId);
+  });
+
+  if (found) {
+// inside `if (found) { ... }` block
+const v = found.values || {};
+const norm = s => (s || '').trim();
+
+const needsFirst = norm(firstName) && norm(v["First Name"]) !== norm(firstName);
+const needsLast  = norm(lastName)  && norm(v["Last Name"])  !== norm(lastName);
+const needsPhone = norm(phone)     && norm(v["Phone Number"]) !== norm(phone);
+
+if (needsFirst || needsLast || needsPhone) {
+  try {
+    await fetch(`/api/records/Client/${encodeURIComponent(found._id)}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        values: {
+          ...(needsFirst ? { "First Name": firstName } : {}),
+          ...(needsLast  ? { "Last Name":  lastName  } : {}),
+          ...(needsPhone ? { "Phone Number": phone }  : {})
+        }
+      })
+    });
+  } catch (_) {}
+}
+
+    return { clientId: found._id, createdNew: false };
+  }
+
+  // 🆕 Create a new Client for this business (with names)
+  const values = {
+    "Business":     { _id: businessId },
+    "First Name":   firstName || (email.split('@')[0]),
+    "Last Name":    lastName || "",
+    "Email":        email,
+    "Phone Number": phone || "",
+    "is Deleted":   false
+  };
+
+  const createRes = await fetch(`/api/records/Client`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values })
+  });
+  const data = await createRes.json().catch(() => null);
+  if (!createRes.ok) throw new Error(data?.message || 'Client create failed');
+
+  return { clientId: data?._id || data?.data?._id, createdNew: true };
+}
+// ====== /PATCH ======
+
+
 // Robust public fetch for Appointments by business/calendar (no date filter here)
 // Robust public fetch for Appointments (uses the same API.list helper)
 // Pull all appointments for a calendar publicly; filter by date + canceled on the client
@@ -1286,50 +1476,169 @@ async function getAppointmentsRows(calendarId, dateISO = null) {
 
 
 
-// (you already have getUpcomingHoursRows; keep that as-is)
+// Try private list first (includes newly created appts), then fall back to public
+// Pull booked appts for this calendar/day from multiple sources and merge
+async function listAppointmentsForCalendarDay(calendarId, dateISO) {
+  const calId = refId(calendarId);
+  const day = String(dateISO);
+
+  const isSameDay = (v) => {
+    const raw = (v.Date || v.date || v.startISO || v.start || "").toString();
+    const d = raw.includes("T") ? raw.slice(0, 10) : raw;
+    return d === day;
+  };
+  const notCanceled = (v) => {
+    const s = String(v["Appointment Status"] || v.Status || "").toLowerCase();
+    return v["is Canceled"] !== true && !s.includes("cancel");
+  };
+  const byCal = (v) => {
+    const c = v.Calendar || v.calendar || v["Calendar"];
+    const id = refId(c);
+    return String(id) === String(calId);
+  };
+
+  const dedupe = (rows) => {
+    const seen = new Set();
+    return rows.filter(r => {
+      const id = r._id || r.id || (r.values && r.values._id);
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  };
+
+  const headers = { Accept: "application/json" };
+  const results = [];
+
+  // 1) PRIVATE: direct REST, two shapes for Calendar filter
+  for (const where of [{ Calendar: calId }, { Calendar: { _id: calId } }]) {
+    try {
+      const qs = new URLSearchParams({
+        where: JSON.stringify(where),
+        limit: "500",
+        includeRefField: "0",
+        ts: Date.now().toString() // cache-bust
+      });
+      const r = await fetch(`/api/records/Appointment?${qs}`, {
+        credentials: "include",
+        cache: "no-store",
+        headers
+      });
+      if (r.ok) {
+        const arr = await r.json();
+        if (Array.isArray(arr) && arr.length) results.push(...arr);
+      }
+    } catch (e) {
+      console.debug("[slots] private REST failed", e);
+    }
+  }
+
+  // 2) "ME" endpoint (client’s appointments). We’ll filter by calendar+day client-side.
+  try {
+    const qs = new URLSearchParams({
+      dataType: "Appointment",
+      includeCreatedBy: "1",
+      includeRefField: "0",
+      myRefField: "Client",
+      limit: "500",
+      ts: Date.now().toString()
+    });
+    const r = await fetch(`/api/me/records?${qs}`, {
+      credentials: "include",
+      cache: "no-store",
+      headers
+    });
+    if (r.ok) {
+      const arr = await r.json();
+      if (Array.isArray(arr) && arr.length) results.push(...arr);
+    }
+  } catch (e) {
+    console.debug("[slots] /api/me/records failed", e);
+  }
+
+  // 3) PUBLIC fallback
+  try {
+    const arr = await publicList("Appointment", { Calendar: calId, ts: Date.now() });
+    if (Array.isArray(arr) && arr.length) results.push(...arr);
+  } catch (e) {
+    console.debug("[slots] publicList failed", e);
+  }
+
+  // Filter (same day, same calendar, not cancelled) + dedupe
+  const filtered = dedupe(results).filter(row => {
+    const v = row.values || row;
+    return isSameDay(v) && byCal(v) && notCanceled(v);
+  });
+
+  console.debug("[slots] merged booked count", {
+    day,
+    calId,
+    privateOrMeOrPublic: results.length,
+    afterFilter: filtered.length
+  });
+
+  return filtered;
+}
+
 
 async function computeTimeslotsForDate(dateISO) {
   const bId = STATE.businessId;
-  const cId = STATE.selected.calendarId;
+  const cId = refId(STATE.selected.calendarId);   // ← normalize
   const dur = STATE.selected.durationMin;
 
   if (!bId || !cId || !dateISO || !dur) return [];
 
   // Upcoming Hours for this business/calendar/date (PUBLIC)
-// pull all UH for this biz+cal, then filter to this day client-side
-let uhAll = await getUpcomingHoursRows(bId, cId);
-let uh = uhAll.filter(row => pickISODate(row.values || row) === dateISO);
+  // pull all UH for this biz+cal, then filter to this day client-side
+  let uhAll = await getUpcomingHoursRows(bId, cId);
+  let uh = uhAll.filter(row => pickISODate(row.values || row) === dateISO);
 
-// Existing appointments to avoid overlaps (PUBLIC by calendar; filter to this day)
-const appts = await getAppointmentsRows(cId, dateISO);
-console.log("[booking] Appts for", dateISO, "=>", appts.length);
+  // Existing appointments (merged private/me/public), same day, same calendar, not cancelled
+  const appts = await listAppointmentsForCalendarDay(cId, dateISO);
+  console.log("[booking] Appts for", dateISO, "=>", appts.length);
 
-const booked = appts
-  .map((r) => {
-    const v = r.values || r;
-    const start =
-      v.Time ||
-      v["Start Time"] ||
-      (v.startISO || v.start || "").slice(11, 16);  // "HH:MM"
-    const dmin = Number(v.Duration ?? v.duration ?? 0);
-    if (!start || !dmin) return null;
-    return { start, end: addMinutesHHMM(start, dmin) };
-  })
-  .filter(Boolean);
+  const booked = appts
+    .map((r) => {
+      const v = r.values || r;
+      const start =
+        v.Time ||
+        v["Start Time"] ||
+        (v.startISO || v.start || "").slice(11, 16);  // "HH:MM"
+      const dmin = Number(v.Duration ?? v.duration ?? 0);
+      if (!start || !dmin) return null;
+      return { start, end: addMinutesHHMM(start, dmin) };
+    })
+    .filter(Boolean);
 
+  // 🛟 safety-net: include a very-recent locally-booked block if server hasn’t surfaced it yet
+  try {
+    const jb = JSON.parse(localStorage.getItem("lastBooked") || "null");
+    if (
+      jb &&
+      String(jb.calId) === String(cId) &&
+      jb.date === dateISO &&
+      (Date.now() - jb.ts) < 5 * 60 * 1000 // 5 minutes
+    ) {
+      const jbEnd = addMinutesHHMM(jb.start, jb.duration);
+      const already = booked.some(b => b.start === jb.start && b.end === jbEnd);
+      if (!already) {
+        booked.push({ start: jb.start, end: jbEnd });
+        console.debug("[booking] added local safety block", jb);
+      }
+    }
+  } catch {}
 
+  // Build free slots by subtracting booked from Upcoming Hours
   const slots = [];
   uh.forEach((row) => {
     const v = row.values || row;
+
     // prefer your admin labels; fall back to Start/End if needed
-const enabled   = v.Enabled !== false && v.Enabled !== "false";
-const available = v["is Available"] !== false && v["is Available"] !== "false";
-
-const startOpen = v.Start || v["Start Time"];  // prefer Start, fallback if legacy
-const endOpen   = v.End   || v["End Time"];    // prefer End, fallback if legacy
-
-if (!startOpen || !endOpen || !enabled || !available) return;
-
+    const enabled   = v.Enabled !== false && v.Enabled !== "false";
+    const available = v["is Available"] !== false && v["is Available"] !== "false";
+    const startOpen = v.Start || v["Start Time"];
+    const endOpen   = v.End   || v["End Time"];
+    if (!startOpen || !endOpen || !enabled || !available) return;
 
     let cursor = startOpen;
     while (timeLTE(addMinutesHHMM(cursor, dur), endOpen)) {
@@ -1342,9 +1651,23 @@ if (!startOpen || !endOpen || !enabled || !available) return;
   });
 
   slots.sort((a, b) => (timeLT(a.start, b.start) ? -1 : 1));
+  console.debug("[booking] slots after merge", { dateISO, cId, count: slots.length });
   return slots;
 }
 
+
+// include a very-recent locally-booked block if server hasn’t surfaced it yet
+try {
+  const jb = JSON.parse(localStorage.getItem("lastBooked") || "null");
+  if (jb &&
+      String(jb.calId) === String(cId) &&
+      jb.date === dateISO &&
+      (Date.now() - jb.ts) < 5 * 60 * 1000 // 5 minutes
+  ) {
+    const already = booked.some(b => b.start === jb.start && b.end === addMinutesHHMM(jb.start, jb.duration));
+    if (!already) booked.push({ start: jb.start, end: addMinutesHHMM(jb.start, jb.duration) });
+  }
+} catch {}
 
 function bucketFor(hhmm) {
   const [h] = hhmm.split(":").map(Number);
@@ -1493,6 +1816,10 @@ async function onLoginClick() {
     STATE.user.loggedIn = true;
     STATE.user.userId   = res.userId || res._id || res.id || null;
     STATE.user.role     = res.role || "client";
+STATE.user.email     = res.email || email;           // keep the login email
+STATE.user.firstName = res.firstName || '';
+STATE.user.lastName  = res.lastName  || '';
+STATE.user.phone     = res.phone || res.phoneNumber || '';
 
     // NEW: continue flow if we came here from "Book Now"
     const shouldContinue = !!STATE.user.continueAfterLogin;
@@ -1509,9 +1836,75 @@ async function onLoginClick() {
   }
 }
 
+// Resolve the pro/staff reference from the selected calendar
+async function getProRefForSelectedCalendar() {
+  const calId = (STATE?.selected?.calendarId && (STATE.selected.calendarId._id || STATE.selected.calendarId)) || null;
+    console.log('DEBUG calId=', String(calId));
+  console.log('DEBUG cacheKeys=', Object.keys(STATE.calById || {}));
+  if (!calId) return null;
+
+  // 🔧 Fallback: if calById missing, build it from STATE.calendars on the fly
+  if (!STATE.calById && Array.isArray(STATE.calendars) && STATE.calendars.length) {
+    STATE.calById = Object.fromEntries(
+      STATE.calendars.map(c => [String(c._id || c.id), c])
+    );
+  }
+
+  // Try cache first
+  let cal = STATE.calById?.[String(calId)] || null;
+
+  // Final fallback: scan the array
+  if (!cal && Array.isArray(STATE.calendars)) {
+    cal = STATE.calendars.find(c => String(c._id || c.id) === String(calId)) || null;
+  }
+
+  if (!cal) {
+    console.warn('[booking] selected calendar not in cache; skipping pro lookup');
+    return null;
+  }
+
+  const v = cal.values || {};
+  const proLike =
+    v.Pro || v['Pro Ref'] ||
+    v.Staff || v['Staff Ref'] ||
+    v.Professional || v.Provider || v.Owner;
+
+  if (!proLike) return null;
+
+  const id = proLike._id || proLike.id || (typeof proLike === 'string' ? proLike : null);
+  return id ? { _id: String(id) } : null;
+}
+
+// Make sure hydrateUser is defined on window so any handler can call it
+window.hydrateUser = async function hydrateUser() {
+  try {
+    if (STATE.user?.hydrated) return;
+    const r = await fetch('/api/users/me?ts=' + Date.now(), { credentials: 'include' });
+    if (r.status === 401) { STATE.user = { loggedIn:false, hydrated:true }; return; }
+    const { user } = await r.json();
+    STATE.user = {
+      ...(STATE.user || {}),
+      loggedIn: true,
+      hydrated: true,
+      userId:    user._id,
+      email:     (user.email || '').trim(),
+      firstName: (user.firstName || '').trim(),
+      lastName:  (user.lastName || '').trim(),
+      phone:     (user.phone || '').trim(),
+      profilePhoto: user.profilePhoto || ''
+    };
+  } catch {
+    // leave STATE.user as-is
+  }
+};
+
+// prime as soon as page loads
+document.addEventListener('DOMContentLoaded', () => { window.hydrateUser(); });
+
 // ------- BOOKING -------
 async function confirmBookNow() {
   try {
+    // 0) Validate
     if (
       !STATE.selected.calendarId ||
       !STATE.selected.serviceIds.length ||
@@ -1522,107 +1915,141 @@ async function confirmBookNow() {
       alert("Please choose calendar, service(s), date, and time.");
       return;
     }
-if (!STATE.user.loggedIn) {
-  STATE.user.continueAfterLogin = true; // remember we came from Book Now
-  openAuth();
-  return;
+
+    // ✅ 1) HYDRATE EARLY
+    await hydrateUser();
+if (!STATE.calById && Array.isArray(STATE.calendars) && STATE.calendars.length) {
+  STATE.calById = Object.fromEntries(
+    STATE.calendars.map(c => [String(c._id || c.id), c])
+  );
 }
 
-  const svcNames = STATE.selected.serviceIds
-  .map((id) => CURRENT_SERVICES.find((s) => s._id === id)?.values?.["Name"])
-  .filter(Boolean);
-const appointmentName = svcNames.join(" + ");
+    // 2) If still not logged in, go to auth
+    if (!STATE.user.loggedIn) {
+      STATE.user.continueAfterLogin = true;
+      openAuth();
+      return;
+    }
 
-// === REPLACE START (build schema-friendly payload and create) ===
-const values = {
-  Business: STATE.businessId,              // Reference
-  Calendar: STATE.selected.calendarId,     // Reference
-  Date:     STATE.selected.dateISO,        // "YYYY-MM-DD"
-  Time:     STATE.selected.timeHHMM,       // "HH:MM" 24h
-  Duration: STATE.selected.durationMin     // Number (minutes) — use the exact label your type uses
-};
+    // 3) Build appointment name
+    const svcNames = STATE.selected.serviceIds
+      .map(id => CURRENT_SERVICES.find(s => s._id === id)?.values?.["Name"])
+      .filter(Boolean);
+    const appointmentName = svcNames.join(" + ");
 
-// Optional fields (safe to include, remove if server complains)
-if (STATE.user.userId) {
-  // send reference as {_id: "..."} so the server can normalize it
-  values.Client = { _id: STATE.user.userId };
-}
+    // 4) Ensure Client record exists (now STATE.user has real names)
+    const { clientId } = await ensureClientIdForBooking({
+      businessId: STATE.businessId,
+      email:      STATE.user.email,
+      firstName:  STATE.user.firstName,
+      lastName:   STATE.user.lastName,
+      phone:      STATE.user.phone
+    });
 
-if (STATE.selected.serviceIds?.length) {
-  // if your field is literally "Service(s)" keep that label
-  values["Service(s)"] = STATE.selected.serviceIds.map(id => ({ _id: id }));
-}
+    // 5) Build values
+    const values = {
+      Business:   { _id: STATE.businessId },
+      Calendar:   { _id: STATE.selected.calendarId },
+      Date:       STATE.selected.dateISO,
+      Time:       STATE.selected.timeHHMM,
+      Duration:   STATE.selected.durationMin,
+      "Service(s)": (STATE.selected.serviceIds || []).map(id => ({ _id: id })),
+      Client:     clientId ? { _id: clientId } : undefined,
+      Name:       appointmentName || "Appointment",
+      "Appointment Status": "booked",
+      "is Canceled": false
+    };
 
-// Nice-to-have metadata (comment these out if you still see a 500 and add back one by one)
-values.Name = (
-  STATE.selected.serviceIds
-    .map(id => CURRENT_SERVICES.find(s => s._id === id))
-    .map(s => (s?.values?.["Service Name"] || s?.values?.Name || s?.serviceName || "Service"))
-    .filter(Boolean)
-    .join(" + ")
-) || "Appointment";
+  // 6) Denormalize names (account first; client only if account is missing)
+let dnFirst = (STATE.user.firstName || '').trim();
+let dnLast  = (STATE.user.lastName  || '').trim();
+let dnEmail = (STATE.user.email     || '').trim();
 
-values["Appointment Status"] = "booked";
-values["is Canceled"] = false;
-
-// Fill Pro Name on the appointment from the Business record (denormalize)
-if (!values["Pro Name"]) {
-  try {
-    const res = await fetch(`/${encodeURIComponent(slugFromPath())}.json`, {
+try {
+  if (clientId) {
+    const r = await fetch(`/api/records/Client/${encodeURIComponent(clientId)}?ts=${Date.now()}`, {
+      credentials: "include",
       headers: { Accept: "application/json" }
     });
-    if (res.ok) {
-      const biz = await res.json();
-      const pn =
-        biz?.values?.["Pro Name"] ||
-        biz?.values?.proName ||
-        biz?.values?.stylistName ||
-        "";
-      if (pn) values["Pro Name"] = pn;
+    if (r.ok) {
+      const cv = (await r.json())?.values || {};
+      // ⭐ Do NOT overwrite non-empty account values with older client values
+      if (!dnFirst) dnFirst = (cv['First Name'] || '').trim();
+      if (!dnLast)  dnLast  = (cv['Last Name']  || '').trim();
+      if (!dnEmail) dnEmail = (cv['Email']      || '').trim();
     }
-  } catch (_) {
-    /* ignore */
   }
-}
+} catch {}
 
-// Persist to server
-await API.create("Appointment", values);
-// === REPLACE END ===
-
-
-
-    $("#success-details").innerHTML = `
-      <div><strong>Confirmed:</strong> ${appointmentName || "Appointment"}</div>
-      <div><strong>Date:</strong> ${formatDatePretty(STATE.selected.dateISO)}</div>
-      <div><strong>Time:</strong> ${STATE.selected.timeHHMM}</div>
-      <div><strong>Duration:</strong> ${STATE.selected.durationMin} min</div>
-    `;
-    $("#successModal").classList.add("is-open");
-
-// NEW: remove every slot that overlaps the booked block
-const bookedStart = STATE.selected.timeHHMM;
-const bookedEnd   = addMinutesHHMM(bookedStart, STATE.selected.durationMin);
-
-$$(".timeslot").forEach((b) => {
-  const btnStart = b.dataset.start || b.textContent;
-  const btnEnd   = b.dataset.end   || addMinutesHHMM(btnStart, STATE.selected.durationMin);
-  if (overlap(bookedStart, bookedEnd, btnStart, btnEnd)) {
-    b.remove();
-  }
-});
-
-if (!$("#timeslots").children.length) {
-  $("#timeslots").innerHTML = `<div class="muted">No more times for this date.</div>`;
-  hide("#section-confirm");
-}
-// NEW: update the calendar dots/availability for that day
-await refreshDayDot(STATE.selected.dateISO);
+const dnFull = [dnFirst, dnLast].filter(Boolean).join(' ').trim();
+values['Client Name']       = dnFull || (dnEmail.split('@')[0] || 'Client');
+values['Client First Name'] = dnFirst;
+values['Client Last Name']  = dnLast;
+values['Client Email']      = dnEmail;
 
 
+  
+    // 7) Attach Pro, etc. (unchanged)
+    if (STATE.selected.proUserId) {
+      values.Pro = { _id: STATE.selected.proUserId };
+    } else {
+      try {
+        const proRef = await getProRefForSelectedCalendar();
+        if (proRef && proRef._id) values.Pro = proRef;
+      } catch (e) {}
+    }
+    if (STATE.ownerUserId) values["Business Owner"] = { _id: STATE.ownerUserId };
+    try {
+      const res = await fetch(`/${encodeURIComponent(slugFromPath())}.json`, { headers: { Accept: "application/json" } });
+      if (res.ok) {
+        const biz = await res.json();
+        const pn = biz?.values?.["Pro Name"] || biz?.values?.proName || biz?.values?.stylistName || "";
+        if (pn) values["Pro Name"] = pn;
+      }
+    } catch {}
+
+    // 8) Save
+    await API.create("Appointment", values);
+    // ... (rest of your success UI code)
   } catch (e) {
     alert("That time may have just been taken. Please pick another slot.");
     console.error("Book error", e);
   }
+}
+function to12h(hhmm = '00:00') {
+  const [H, M='0'] = String(hhmm).split(':');
+  let h = parseInt(H, 10), m = parseInt(M, 10);
+  const ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return `${h}:${String(m).padStart(2,'0')} ${ap}`;
+}
+function prettyDate(ymd = '2025-01-01') {
+  try {
+    const d = new Date(`${ymd}T00:00:00`);
+    return d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+  } catch { return ymd; }
+}
+function makeIcsBuffer({ title, description='', location='', startISO, durationMin=60, organizerName='', organizerEmail='' }) {
+  const d = new Date(startISO);
+  return new Promise((resolve, reject) => {
+    createEvent({
+      start: [d.getFullYear(), d.getMonth()+1, d.getDate(), d.getHours(), d.getMinutes()],
+      duration: { minutes: durationMin },
+      title,
+      description,
+      location,
+      organizer: organizerEmail ? { name: organizerName || '', email: organizerEmail } : undefined,
+      status: 'CONFIRMED',
+      busyStatus: 'BUSY'
+    }, (err, value) => err ? reject(err) : resolve(Buffer.from(value)));
+  });
+}
+async function sendBookingEmail({ to, subject, html, icsBuffer }) {
+  const from = process.env.MAIL_FROM || process.env.SMTP_USER;
+  return mailer.sendMail({
+    from, to, subject, html,
+    attachments: icsBuffer ? [{ filename: 'appointment.ics', content: icsBuffer, contentType: 'text/calendar' }] : []
+  });
 }
 
 

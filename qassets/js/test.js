@@ -1,10 +1,6 @@
 let currentWeekDates = [];
 let currentEditAppointmentId = null;
 let lastEditedBusinessId = null;
-
-// Global cache of normalized appointments
-window.__appts = window.__appts || [];
-
 // Global error hooks (so other errors don't silently stop later code)
 window.onerror = function (msg, src, line, col, err) {
   console.error("[window.onerror]", { msg, src, line, col, err });
@@ -92,11 +88,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!data || !data.loggedIn) return;
 
     // Show what we’re choosing for display
-  const chosen =
-  (data.firstName || "").trim() ||
-  (data.name || "").trim() ||
-  "there";
-
+    const chosen =
+      (data.firstName || "").trim() ||
+      (data.name || "").trim() ||
+      // comment this next line if you DON'T want to ever use email prefix
+      (data.email ? data.email.split("@")[0] : "") ||
+      "there";
 
     console.log("[DEBUG] chosen display name:", chosen);
 
@@ -278,92 +275,6 @@ function getSlotHeightPx() {
   __slotHeightPx = Math.abs(a - b) || 24; // fallback if measure fails
   return __slotHeightPx;
 }
-function escapeHtml(s) {
-  return String(s || "").replace(/[&<>"']/g, m => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-  }[m]));
-}
-function getClientName(appt) {
-  const v = appt.values || appt || {};
-  const dn   = (v['Client Name'] || '').trim();                // server-propagated
-  const fn   = (v['Client First Name'] || '').trim();
-  const ln   = (v['Client Last Name']  || '').trim();
-  const full = [fn, ln].filter(Boolean).join(' ').trim();
-  const email= (v['Client Email'] || v.clientEmail || '').trim();
-  return dn || full || (email ? email.split('@')[0] : 'Client');
-}
-// Column measurements based on the actual rendered width
-function getColumnMetrics() {
-  const grid = document.querySelector('.time-slots-container');
-  if (!grid) return { colW: 0, gap: 0 };
-
-  const rect = grid.getBoundingClientRect();
-  const cols = 7;
-
-  // If you draw 1px vertical separators, set gap=1. Otherwise leave 0.
-  const gap = 1;
-
-  const innerW = Math.floor(rect.width);
-  const colW = Math.floor((innerW - gap * (cols - 1)) / cols);
-  return { colW, gap };
-}
-
-// Reflow card widths/lefts when the window resizes
-function reflowAppointmentCards() {
-  const grid = document.querySelector('.time-slots-container');
-  if (!grid) return;
-
-  const { colW, gap } = getColumnMetrics();
-  if (!colW) return;
-
-  document.querySelectorAll('.appointment-card').forEach(card => {
-    const dayIndex = Number(card.dataset.dayIndex || 0);
-    card.style.left  = `${Math.round(dayIndex * (colW + gap))}px`;
-    card.style.width = `${colW}px`;
-  });
-}
-
-// tiny debounce
-function debounce(fn, ms=100) {
-  let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
-}
-window.addEventListener('resize', debounce(reflowAppointmentCards, 120));
-
-// ONE canonical version — works with both raw records and normalized appts
-// Single source of truth
-function getClientName(rec) {
-  const v = rec?.values || rec || {};
-
-  // A) denormalized
-  const dn = (v.clientName || v["Client Name"] || "").trim();
-  if (dn) return dn;
-
-  // B) expanded Client ref
-  const cref = v.Client || v["Client"];
-  if (cref) {
-    const cv = cref.values || cref;
-    const fn = (cv["First Name"] || cv.firstName || "").trim();
-    const ln = (cv["Last Name"]  || cv.lastName  || "").trim();
-    const nm = (cv["Name"] || cv.name || cv["Client Name"] || `${fn} ${ln}`.trim()).trim();
-    if (nm) return nm;
-  }
-
-  // C) map fallback
-  const cid = v.clientId || (v.Client && (v.Client._id || v.Client.id)) || "";
-  if (cid && window.__clientMap && window.__clientMap[cid]) return window.__clientMap[cid];
-
-  // D) email
-  return (v["Client Email"] || v.clientEmail || "").trim() || "(No client)";
-}
-
-function getApptId(a) {
-  return String(
-    (a && (a._id || a.id)) ||
-    (a && a.values && (a.values._id || a.values.id)) ||
-    ''
-  );
-}
-
 
 function renderAppointmentsOnGrid(appts, maps = {}) {
   const container =
@@ -378,15 +289,11 @@ function renderAppointmentsOnGrid(appts, maps = {}) {
 
   appts.forEach(appt => {
     const card = document.createElement("div");
-  card.className = "appt-card";
- const apptId = getApptId(appt);
- card.dataset.id = apptId;
- console.debug('[card bind id][appt-card]', apptId, appt);
+    card.className = "appt-card";
+    card.dataset.id = appt._id;
+
     card.innerHTML = buildApptCardContent(appt, serviceMap);
- card.addEventListener('click', () => {
-   if (!apptId) return console.warn('no id on card click', appt);
-   openAppointmentEditor(apptId);
- });
+
     // ✅ height = exact number of 15-minute slots
     const minutes  = Number(appt.duration) || 0;        // <-- use appt.duration
     const blocks   = Math.max(1, Math.ceil(minutes / 15)); // 15→1, 30→2, 45→3, 60→4
@@ -414,8 +321,7 @@ function buildApptCardContent(appt, serviceMap) {
   const endLabel   = format12h(end.h, end.m);
 
   // client
-const clientLabel = getClientName(appt);
-
+  const clientLabel = (appt.clientName || "").trim() || "(No client)";
 
   // services list
 const serviceNames = (appt.serviceIds || [])
@@ -428,11 +334,11 @@ const serviceNames = (appt.serviceIds || [])
     ? `<ul class="appt-services">${serviceNames.map(n => `<li>${n}</li>`).join("")}</ul>`
     : `<ul class="appt-services"><li>(No service)</li></ul>`;
 
-return `
-  <div class="appt-time">${startLabel} – ${endLabel}</div>
-  <div class="appt-client">${escapeHtml(clientLabel || "(No client)")}</div>
-  ${servicesHtml}
-`;
+  return `
+    <div class="appt-time">${startLabel} – ${endLabel}</div>
+    <div class="appt-client">${clientLabel}</div>
+    ${servicesHtml}
+  `;
 }
 
 
@@ -470,10 +376,7 @@ function getId(ref) {
 function normalizeRefArray(val) {
   if (!val) return [];
   const arr = Array.isArray(val) ? val : [val];
-  return arr
-    .map(x => (typeof x === 'object' ? (x._id || x.id) : x))
-    .filter(Boolean)
-    .map(String);
+  return arr.map(getId).filter(Boolean);
 }
 function recordMatchesBusiness(rec, bizId) {
   if (!bizId || bizId === "all") return true;
@@ -483,24 +386,11 @@ function recordMatchesBusiness(rec, bizId) {
   if (typeof b === "object" && b._id) return String(b._id) === String(bizId);
   return false;
 }
-function getColumnMetrics() {
-  const grid = document.querySelector('.time-slots-container');
-  if (!grid) return { colW: 0, gap: 0 };
-
-  const rect = grid.getBoundingClientRect();
-  const cols = 7;
-  const gap  = 1; // set to 1 if you draw 1px vertical grid lines, else 0
-  const innerW = Math.floor(rect.width);
-  const colW = Math.floor((innerW - gap * (cols - 1)) / cols);
-  return { colW, gap };
-}
-
 async function fetchAppointments(whereObj, limit = 1000, sortObj = { "Date": 1, "Time": 1, "createdAt": 1 }) {
   const qs = new URLSearchParams({
     where: JSON.stringify(whereObj || {}),
     limit: String(limit),
     sort : JSON.stringify(sortObj),
-    includeRefField: "1",       // ⬅️ add this
     ts   : Date.now().toString()
   });
   const res = await fetch(`/api/records/Appointment?${qs.toString()}`, {
@@ -510,12 +400,6 @@ async function fetchAppointments(whereObj, limit = 1000, sortObj = { "Date": 1, 
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
-
-
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
 
 // ---- Load & render appointments (robust to ref shapes)
 // Helper: local Y-M-D for safe week matching
@@ -534,65 +418,35 @@ function isCanceled(v){
 // Normalize one record -> appt object your grid expects
 function normalizeAppt(r, clientMap = {}) {
   const v = r.values || r;
-  const rid = r._id || r.id || v?._id;
-  const clientId = getId(v["Client"]);
-  const rawSvc =
+
+  const clientId  = getId(v["Client"]);
+  const rawSvc    =
     v["Service(s)"] ?? v["Services"] ?? v["Service"] ??
     v["Selected Services"] ?? v["Service Ids"] ?? v["Service Id"] ??
     v["serviceIds"] ?? v["serviceId"];
+  const serviceIds = normalizeRefArray(rawSvc);
 
   return {
-    _id:      String(rid || ""),
-    date:     toYMD(v["Date"] || v["date"] || v["startISO"] || v["start"] || ""),
-    time:     toHHMM(v["Time"] || v["time"] || v["Start Time"] || v["startTime"] || ""),
-    duration: v["Duration"] ?? v["duration"] ?? 0,
+    _id:        r._id || r.id,
+    date:       v["Date"] || v["date"] || "",
+    time:       v["Time"] || v["time"] || "",      // "HH:mm"
+    duration:   v["Duration"] ?? v["duration"] ?? 0,
     clientId,
-    serviceIds: normalizeRefArray(rawSvc),
-    // ✅ keep a denormalized name for fast UI
-    clientName: clientMap[String(clientId)] || v["Client Name"] || v.clientName || "",
-    businessId: getId(v["Business"]) || v["businessId"] || "",
-    calendarId: getId(v["Calendar"]) || v["calendarId"] || "",
-    note: v["Note"] || ""
+    serviceIds,
+    clientName: clientMap[String(clientId)] || v["Client Name"] || "",
+    businessId: getId(v["Business"])  || v["businessId"]  || "",
+    calendarId: getId(v["Calendar"])  || v["calendarId"]  || "",
+    note:       v["Note"] || ""
   };
 }
 
-
-async function fetchCalendarsForBusiness(businessId) {
-  const out = new Set();
-  // try both shapes for Business filter
-  for (const where of [{ "Business": businessId }, { "Business": { _id: businessId } }]) {
-    try {
-      const qs = new URLSearchParams({
-        where: JSON.stringify(where),
-        limit: "1000",
-        ts: Date.now().toString()
-      });
-      const r = await fetch(`/api/records/Calendar?${qs}`, {
-        credentials: "include",
-        cache: "no-store",
-        headers: { Accept: "application/json" }
-      });
-      if (r.ok) {
-        const arr = await r.json();
-        (arr || []).forEach(row => {
-          const id = row?._id || row?.id || row?.values?._id;
-          if (id) out.add(String(id));
-        });
-      }
-    } catch {}
-  }
-  return [...out];
-}
-
-// ---- Load & render appointments with PUBLIC fallback ----
 // ---- Load & render appointments with PUBLIC fallback ----
 async function loadAppointments() {
   try {
     const businessId = document.getElementById("business-dropdown")?.value || "all";
 
-    // ---- build date window (week preferred) ----
+    // Prefer the *visible week* as the range if available
     let whereBase = {};
-    const ymdLocal = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     if (Array.isArray(window.currentWeekDates) && window.currentWeekDates.length === 7) {
       const start = ymdLocal(window.currentWeekDates[0]);
       const end   = ymdLocal(window.currentWeekDates[6]);
@@ -603,158 +457,68 @@ async function loadAppointments() {
       whereBase["Date"] = { "$gte": ymdLocal(s), "$lte": ymdLocal(e) };
     }
 
-    const filterByWindowAndBiz = (rows) => (rows || []).filter(r => {
-      const v = r.values || r;
-      if (isCanceled(v)) return false;
-
-      // date window
-      const raw = (v.Date || v.date || v.startISO || v.start || "").toString();
-      const day = raw.includes("T") ? raw.slice(0,10) : raw;
-      const gte = whereBase?.Date?.["$gte"];
-      const lte = whereBase?.Date?.["$lte"];
-      if (gte && day < gte) return false;
-      if (lte && day > lte) return false;
-
-      // match business for public responses (no-op if "all")
-      return (businessId === "all") ? true : recordMatchesBusiness({ values: v }, businessId);
-    });
-
-// ---- 1) PRIVATE by Business (try both "Date" and "date") ----
-let privateRows = [];
-const dateFilter = whereBase.Date ? whereBase.Date : null;
-
-const privateWheres = [];
-
-if (businessId !== "all") {
-  // Business as id + {_id}, each with Date and date variants
-  if (dateFilter) {
-    privateWheres.push({ Business: businessId,                  Date: dateFilter });
-    privateWheres.push({ Business: businessId,                  date: dateFilter });
-    privateWheres.push({ Business: { _id: businessId },         Date: dateFilter });
-    privateWheres.push({ Business: { _id: businessId },         date: dateFilter });
-  } else {
-    privateWheres.push({ Business: businessId });
-    privateWheres.push({ Business: { _id: businessId } });
-  }
-} else {
-  // "All" without Business filter
-  if (dateFilter) {
-    privateWheres.push({ Date: dateFilter });
-    privateWheres.push({ date: dateFilter });
-  } else {
-    privateWheres.push({});
-  }
-}
-
-// run them in series; collect all
-for (const w of privateWheres) {
-  try {
-    const rows = await fetchAppointments(w).catch(() => []);
-    if (rows && rows.length) privateRows.push(...rows);
-  } catch {}
-}
-
-
-    // ---- 2) PRIVATE by Calendar (fallback if ACL limits Business list) ----
-    let extraPriv = [];
+    // 1) PRIVATE first (auth API)
+    let privateRows = [];
     if (businessId !== "all") {
-      const calIds = await fetchCalendarsForBusiness(businessId);
-      if (calIds.length) {
-        const chunks = [];
-        for (const calId of calIds) {
-          chunks.push(
-            fetchAppointments({ ...whereBase, "Calendar": calId }).catch(() => []),
-            fetchAppointments({ ...whereBase, "Calendar": { _id: calId } }).catch(() => [])
-          );
-        }
-        const nested = await Promise.all(chunks);
-        extraPriv = nested.flat().filter(Boolean);
+      privateRows = await fetchAppointments({ ...whereBase, "Business": businessId });
+      if (!privateRows?.length) {
+        privateRows = await fetchAppointments({ ...whereBase, "Business": { _id: businessId } });
       }
+    } else {
+      privateRows = await fetchAppointments(whereBase);
     }
 
-    // ---- 3) PUBLIC (and extra private) fallback ----
- // ---- 3) PUBLIC fallback (by Business + by Calendar) ----
-let publicRows = [];
+    // 2) PUBLIC fallback (merge)
+    //    Pull by Business (safer than Calendar here), then filter by week/month + not cancelled.
+    let publicRows = [];
+    try {
+      const pub = await publicList("Appointment", businessId !== "all" ? { Business: businessId } : {});
+      publicRows = (pub || [])
+        .filter(r => {
+          const v = r.values || r;
+          if (isCanceled(v)) return false;
 
-try {
-  const pubByBiz = await publicList(
-    "Appointment",
-    businessId !== "all" ? { Business: businessId, ts: Date.now() } : { ts: Date.now() }
-  );
-  publicRows.push(...filterByWindowAndBiz(pubByBiz));
-} catch {}
+          // filter by whereBase Date if present
+          const raw = (v.Date || v.date || v.startISO || v.start || "").toString();
+          const day = raw.includes("T") ? raw.slice(0,10) : raw;
+          const gte = whereBase?.Date?.["$gte"];
+          const lte = whereBase?.Date?.["$lte"];
+          if (gte && day < gte) return false;
+          if (lte && day > lte) return false;
 
-// If a single business is selected, also pull per-calendar
-if (businessId !== "all") {
-  try {
-    const calIds = await fetchCalendarsForBusiness(businessId);
-    for (const calId of calIds) {
-      try {
-        const pubByCal = await publicList("Appointment", { Calendar: calId, ts: Date.now() });
-        publicRows.push(...filterByWindowAndBiz(pubByCal));
-      } catch {}
+          return (businessId === "all") ? true : recordMatchesBusiness({ values: v }, businessId);
+        });
+    } catch (e) {
+      console.warn("[loadAppointments] public fallback failed:", e);
     }
-  } catch {}
-} else {
-  // 🔽 "All" selected: union calendars from every business in the dropdown
-  const dd = document.getElementById('business-dropdown');
-  const bizIds = [...dd.options].map(o => o.value).filter(v => v && v !== 'all');
 
-  const calIdSets = await Promise.all(bizIds.map(fetchCalendarsForBusiness));
-  const allCalIds = [...new Set(calIdSets.flat())];
+    // 3) Merge + de-dupe by _id
+    const byId = new Map();
+    [...(privateRows || []), ...(publicRows || [])].forEach(r => {
+      const id = String(r._id || r.id || (r.values?._id));
+      if (!id) return;
+      if (!byId.has(id)) byId.set(id, r);
+    });
+    const rows = Array.from(byId.values());
 
-  const chunks = [];
-  for (const calId of allCalIds) {
-    chunks.push(fetchAppointments({ ...whereBase, "Calendar": calId }).catch(()=>[]));
-    chunks.push(fetchAppointments({ ...whereBase, "Calendar": { _id: calId } }).catch(()=>[]));
-    chunks.push(publicList("Appointment", { Calendar: calId, ts: Date.now() }).catch(()=>[]));
-  }
-  const nested = await Promise.all(chunks);
-  publicRows.push(...filterByWindowAndBiz(nested.flat().filter(Boolean)));
-}
-
-
-// ---- 4) merge + dedupe ----
-const byId = new Map();
-[...(privateRows||[]), ...(extraPriv||[]), ...(publicRows||[])]
-  .forEach(r => {
-    const id = String(r._id || r.id || (r.values && r.values._id) || ""); // ⬅️ here
-    if (!id) return;
-    if (!byId.has(id)) byId.set(id, r);
-  });
-const rows = Array.from(byId.values());
-
-
-    // ---- 5) maps ----
+    // 4) Build maps (includeAll when "all" is selected)
     const includeAll = (businessId === 'all');
     const [clientMap, serviceMap] = await Promise.all([
       buildClientMap(businessId, includeAll),
       buildServiceMap(businessId, includeAll),
     ]);
-if (rows.length) console.log("[debug] raw row values", rows[0].values || rows[0]);
 
-// ---- 6) normalize + render ----
-const appts = rows
-  .filter(r => !isCanceled(r.values || r))
-  .map(r => normalizeAppt(r, clientMap));
+    // 5) Normalize + filter not cancelled just in case
+    const appts = rows
+      .filter(r => !isCanceled(r.values || r))
+      .map(r => normalizeAppt(r, clientMap));
 
-// 🔎 DEBUG: check what one normalized appt looks like and what name we resolve
-if (appts.length) {
-  console.log("[debug] sample appt", appts[0], "→ name:", getClientName(appts[0]));
-} else {
-  console.log("[debug] no appts in window");
-}
+    // expose maps (your renderer uses these)
+    window.__serviceMap = serviceMap;
+    window.__clientMap  = clientMap;
 
-window.__serviceMap = serviceMap;
-window.__clientMap  = clientMap;
-
-// 👇 keep a copy globally so other code can read it
-window.__appts = appts;
-
-// render
-renderAppointmentsOnGrid(window.__appts, { serviceMap, clientMap });
-
-
+    // 6) Render
+    renderAppointmentsOnGrid(appts, { serviceMap, clientMap });
   } catch (err) {
     console.error("❌ Failed to load appointments:", err);
   }
@@ -1016,62 +780,6 @@ function lookupName(map, id) {
   return '';
 }
 
-async function fetchCalendarsForBusiness(bizId) {
-  const ids = new Set();
-  const headers = { Accept: "application/json" };
-
-  // Private: try both shapes
-  for (const where of [{ Business: bizId }, { Business: { _id: bizId } }]) {
-    try {
-      const qs = new URLSearchParams({
-        where: JSON.stringify(where),
-        fields: JSON.stringify(["_id"]),
-        limit: "1000",
-        ts: Date.now().toString()
-      });
-      const r = await fetch(`/api/records/Calendar?${qs}`, {
-        credentials: "include",
-        cache: "no-store",
-        headers
-      });
-      if (r.ok) {
-        const arr = await r.json();
-        (arr || []).forEach(row => {
-          const id = row._id || row.id || row.values?._id;
-          if (id) ids.add(String(id));
-        });
-      }
-    } catch {}
-  }
-
-  // Public fallback
-  try {
-    const pub = await publicList("Calendar", { Business: bizId, ts: Date.now() });
-    (pub || []).forEach(row => {
-      const id = row._id || row.id || row.values?._id;
-      if (id) ids.add(String(id));
-    });
-  } catch {}
-
-  return Array.from(ids);
-}
-function ymdLocal(d) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-function toYMD(input) {
-  if (!input) return "";
-  const s = String(input);
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10); // already Y-M-D
-  const d = new Date(s);
-  return isNaN(d) ? "" : ymdLocal(d);
-}
-
-function toHHMM(input) {
-  const { h, m } = parseTimeLoose(input);
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-}
-
 // --- time helpers (robust) ---
 function parseTimeLoose(input) {
   if (input == null) return { h: 0, m: 0 };
@@ -1130,12 +838,14 @@ function renderAppointmentsOnGrid(appointments, maps = {}) {
   // remove previous cards
   document.querySelectorAll(".appointment-card").forEach(el => el.remove());
 
-const currentWeekDatesStr = (currentWeekDates || []).map(d => ymdLocal(new Date(d)));
+  const currentWeekDatesStr = currentWeekDates.map(d =>
+    new Date(d).toISOString().split("T")[0]
+  );
 
   const serviceMap = maps.serviceMap || window.__serviceMap || {};
 
   appointments.forEach(appt => {
-   const { _id, date, time, duration } = appt;
+    const { _id, date, time, clientName, duration, businessId, clientId } = appt;
     const serviceIds = Array.isArray(appt.serviceIds) ? appt.serviceIds : (appt.serviceIds ? [appt.serviceIds] : []);
     if (!date || !time) return;
     if (!currentWeekDatesStr.includes(date)) return;
@@ -1154,9 +864,7 @@ const currentWeekDatesStr = (currentWeekDates || []).map(d => ymdLocal(new Date(
 
 const card = document.createElement("div");
 card.className = "appointment-card";
- const apptId = getApptId(appt);
- card.dataset.id = apptId;
- console.debug('[card bind id][appointment-card]', apptId, appt);
+card.dataset.id = String(_id || appt.id || '');
 
 card.style.position = "absolute";
 
@@ -1169,12 +877,7 @@ const topOffset = getTopOffsetFromTimeLoose(
   ''
 );
 card.style.top  = `${Math.round(topOffset)}px`;
-// compute column width/left in *pixels*
-const { colW, gap } = getColumnMetrics();
-card.dataset.dayIndex = String(dayIndex);
-card.style.left  = `${Math.round(dayIndex * (colW + gap))}px`;
-card.style.width = `${colW}px`;
-
+card.style.left = `calc(${dayIndex} * 14.28%)`;
 
 // compute labels (robust parsing)
 const timeRaw =
@@ -1191,10 +894,9 @@ const startLabel = format12h(h, m);
 const endLabel   = format12h(endHM.h, endHM.m);
 
 // service names list you already built as `servicesHtml`
- const clientDisplay = getClientName(appt);
- card.innerHTML = `
+card.innerHTML = `
   <div class="appt-time"><strong>${startLabel} – ${endLabel}</strong></div>
-  <div class="appt-client">${escapeHtml(clientDisplay || "(No client)")}</div>
+  <div class="appt-client">${(clientName || "").trim() || "(No client)"}</div>
   ${servicesHtml}
 `;
 
@@ -1492,7 +1194,36 @@ window.TYPE_SERVICE ??= 'Service'; // <- change to 'Services' if that's your exa
 })();
 
 // ---------- helpers (top-level, reusable) ----------
+async function loadAppointmentBusinesses() {
+  const dropdown = document.getElementById("appointment-business");
+  if (!dropdown) return;
 
+  dropdown.innerHTML = `<option value="">-- Select Business --</option>`;
+
+  try {
+    const res = await fetch(`/api/records/Business?limit=500&ts=${Date.now()}`, {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const rows = await res.json();
+    rows
+      .filter(r => !r.deletedAt)
+      .sort((a, b) =>
+        (a?.values?.businessName || '').localeCompare(b?.values?.businessName || '')
+      )
+      .forEach(biz => {
+        const opt = document.createElement('option');
+        opt.value = biz._id;
+        opt.textContent = biz?.values?.businessName || '(Untitled Business)';
+        dropdown.appendChild(opt);
+      });
+  } catch (err) {
+    console.error("Error loading businesses:", err);
+    dropdown.innerHTML = `<option value="">⚠️ Failed to load</option>`;
+  }
+}
 
 // Robust value getter
 function vget(v, ...keys) {
@@ -1619,65 +1350,134 @@ document.addEventListener('click', (e) => {
   const card = e.target.closest('.appointment-card[data-id]');
   if (!card) return;
   e.preventDefault();
-  openAppointmentEditor(card.dataset.id, card); // ← pass the element
+  openAppointmentEditor(card.dataset.id);
 });
 
-
 // 2) Open the popup in EDIT mode and prefill fields
-async function openAppointmentEditor(apptId, elFromClick = null) {
-  if (!apptId) return;
+// Replace your whole openAppointmentEditor with this version
+async function openAppointmentEditor(apptId) {
+  const base = (t) => (window.API ? window.API(t) : `/api/records/${encodeURIComponent(t)}`);
+  const idUrl = `${base('Appointment')}/${encodeURIComponent(apptId)}?ts=${Date.now()}`;
 
-  const accept = { Accept: 'application/json' };
-  const ts = Date.now();
-
-  // 1) Private GET-by-id
   try {
-    const res = await fetch(`${API_URL('Appointment')}/${encodeURIComponent(apptId)}?includeRefField=1&ts=${ts}`, {
-      credentials:'include', cache:'no-store', headers: accept
-    });
+    console.debug('[openAppointmentEditor] GET', idUrl);
+
+    // 1) Try direct GET /Appointment/:id
+    let rec = null;
+    let res = await fetch(idUrl, { credentials: 'include', cache: 'no-store' });
+
     if (res.ok) {
-      const rec = await res.json();
-      return showAppointmentEditor(rec); // will call openAppointmentPopup(rec)
-    }
-  } catch {}
-
-  // 2) Private list fallback
-  try {
-    const qs = new URLSearchParams({
-      where: JSON.stringify({ _id: apptId }),
-      limit: '1',
-      includeRefField: '1',
-      ts: String(ts)
-    });
-    const r2 = await fetch(`${API_URL('Appointment')}?${qs}`, {
-      credentials:'include', cache:'no-store', headers: accept
-    });
-    if (r2.ok) {
-      const arr = await r2.json();
-      if (arr?.[0]) return showAppointmentEditor(arr[0]);
-    }
-  } catch {}
-
-  // 3) Public fallback using the card’s data-* (so Business is known)
-  try {
-    const el = elFromClick || document.querySelector(`.appointment-card[data-id="${apptId}"]`);
-    const { bizId, calId, date, time } = (el && el.dataset) || {};
-    if (bizId && calId && date && time) {
-      const pub = await publicList('Appointment', {
-        Business: bizId, Calendar: calId, Date: date, Time: time, ts: Date.now()
+      rec = await res.json();
+    } else if (res.status === 404) {
+      // 2) Fallback: list by where (some setups allow list but not item GET)
+      const qs = new URLSearchParams({
+        where: JSON.stringify({ _id: apptId }),
+        limit: '1',
+        includeRefField: '1',
+        ts: String(Date.now())
       });
-      if (Array.isArray(pub) && pub[0]) return showAppointmentEditor(pub[0]);
+      const listUrl = `${base('Appointment')}?${qs.toString()}`;
+      console.debug('[openAppointmentEditor] fallback list', listUrl);
+      const res2 = await fetch(listUrl, { credentials: 'include', cache: 'no-store' });
+      if (res2.ok) {
+        const arr = await res2.json();
+        rec = Array.isArray(arr) ? arr[0] : null;
+      }
+
+      // 3) Optional public fallback if exposed
+      if (!rec && typeof publicList === 'function') {
+        const pub = await publicList('Appointment', { _id: apptId });
+        rec = Array.isArray(pub) ? pub[0] : pub;
+      }
+    } else {
+      throw new Error(`HTTP ${res.status}`);
     }
-  } catch {}
 
-  alert('Could not load that appointment.');
+    if (!rec) throw new Error(`Not found or no permission (id ${apptId})`);
+
+    // -------- your existing prefill logic (unchanged) --------
+    const v = rec?.values || {};
+    const idOf = (x) => (x && typeof x === 'object') ? (x._id || x.id || '') : (x || '');
+
+    const businessId = idOf(v['Business']);
+    const calendarId = idOf(v['Calendar']);
+    const serviceId  = idOf((v['Service(s)'] || [])[0] || v['Service']);
+    const clientId   = idOf(v['Client']);
+    const date       = String(v['Date'] || '').slice(0, 10);
+    const time24     = v['Time'] || '';
+    const duration   = Number(v['Duration'] ?? v.duration ?? 0) || '';
+    const note       = v['Note'] || '';
+
+    // show popup in EDIT mode
+    if (typeof openAppointmentPopup === 'function') await openAppointmentPopup();
+    window.currentEditAppointmentId = apptId;
+
+    const apptBizSel = document.getElementById('appointment-business');
+    const svcSel     = document.getElementById('appointment-service');
+    const cliSel     = document.getElementById('appointment-client');
+
+    // business
+    if (apptBizSel) {
+      await waitForOptions(apptBizSel, 2, 3000);
+      apptBizSel.value = String(businessId || '');
+    }
+
+    // load services/clients for that business
+    if (businessId) {
+      await Promise.all([
+        typeof loadAppointmentServices === 'function'
+          ? loadAppointmentServices(String(businessId))
+          : Promise.resolve(),
+        typeof loadAppointmentClients === 'function'
+          ? loadAppointmentClients(String(businessId), { selectClientId: String(clientId || '') })
+          : Promise.resolve()
+      ]);
+    }
+
+    // select service
+    if (svcSel) {
+      await waitForOptions(svcSel, 2, 3000);
+      svcSel.value = String(serviceId || '');
+      const opt = svcSel.options[svcSel.selectedIndex];
+      if (opt && calendarId && !opt.dataset.calendarId) opt.dataset.calendarId = String(calendarId);
+    }
+
+    // select client
+    if (cliSel) {
+      await waitForOptions(cliSel, 2, 3000);
+      if (clientId) cliSel.value = String(clientId);
+    }
+
+    // scalars
+    const dateEl = document.getElementById('appointment-date');
+    if (dateEl) dateEl.value = date;
+
+    const timeEl = document.getElementById('appointment-time');
+    if (timeEl) timeEl.value = toTimeValue(time24); // ensure "HH:mm"
+
+    const durEl  = document.getElementById('appointment-duration');
+    if (durEl)  durEl.value = duration;
+
+    const noteEl = document.getElementById('appointment-note');
+    if (noteEl) noteEl.value = note;
+
+    // submit label
+    const submitBtn = document.querySelector('#create-appointment-form button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Update Appointment';
+
+    // show cancel in edit mode
+    const cancelBtn = document.getElementById('cancel-appointment-btn');
+    if (cancelBtn) {
+      cancelBtn.style.display = 'inline-block';
+      cancelBtn.dataset.apptId = String(apptId);
+    }
+    // ---------------------------------------------------------
+
+  } catch (err) {
+    console.error('Failed to open appointment in edit mode:', err);
+    alert('Could not load that appointment.');
+  }
 }
-
-function showAppointmentEditor(rec) {
-  return openAppointmentPopup(rec); // your existing function
-}
-
-
 
 
 // 3) helper: convert "HH:MM" (24h) → "h:MM AM/PM" for your time input
@@ -1689,33 +1489,6 @@ function to12h(hhmm) {
   const ap = h >= 12 ? 'PM' : 'AM';
   h = h % 12; if (h === 0) h = 12;
   return `${h}:${String(m).padStart(2,'0')} ${ap}`;
-}
- async function fetchCalendarsForBusiness(businessId) {
-  if (!businessId || businessId === 'all') return [];
-  const headers = { Accept: 'application/json' };
-
-  async function get(where) {
-    const qs = new URLSearchParams({
-      where: JSON.stringify(where),
-      limit: '500',
-      ts: Date.now().toString()
-    });
-    const r = await fetch(`/api/records/Calendar?${qs}`, {
-      credentials: 'include',
-      cache: 'no-store',
-      headers
-    });
-    return r.ok ? (await r.json()) : [];
-  }
-
-  // Try both shapes for the Business reference
-  let rows = await get({ "Business": businessId });
-  if (!rows.length) rows = await get({ "Business": { _id: businessId } });
-
-  return rows
-    .map(r => r._id || r.id || (r.values && r.values._id))
-    .filter(Boolean)
-    .map(String);
 }
 
 // Public fetch helper for /public/records
@@ -1748,59 +1521,62 @@ async function publicList(dataType, filters = {}) {
 }
 
 //DONE // ── Businesses for the "Create Appointment" form ─────────────────────────────
-// ---- Business dropdown (idempotent + deduped) ----
-let __BIZ_CACHE = null;
-let __BIZ_FILLED_ONCE = false;
+async function loadAppointmentBusinesses() {
+  const dropdown = document.getElementById("appointment-business");
+  if (!dropdown) return;
 
-function fillBusinessSelect(sel, items) {
-  sel.innerHTML = `<option value="">-- Select Business --</option>`;
-  items.forEach(({ id, label }) => {
-    const opt = document.createElement('option');
-    opt.value = id;
-    opt.textContent = label || '(Untitled)';
-    sel.appendChild(opt);
-  });
-}
+  dropdown.innerHTML = `<option value="">-- Select Business --</option>`;
+  dropdown.disabled = true;
 
-async function loadAppointmentBusinesses({ force = false } = {}) {
-  const sel = document.getElementById("appointment-business");
-  if (!sel) return;
-
-  // reuse the cache if we already loaded it
-  if (__BIZ_CACHE && !force) {
-    fillBusinessSelect(sel, __BIZ_CACHE);
-    __BIZ_FILLED_ONCE = true;
-    return;
-  }
-
-  sel.innerHTML = `<option value="">-- Select Business --</option>`;
+  // tiny helper to read the first existing key
+  const getV = (v, ...keys) => {
+    for (const k of keys) if (v && v[k] != null) return v[k];
+    return undefined;
+  };
 
   try {
-    const r = await fetch(`/api/records/Business?limit=1000&ts=${Date.now()}`, {
-      credentials: 'include',
-      cache: 'no-store'
-    });
-    const rows = r.ok ? await r.json() : [];
-
-    // dedupe by _id and pick a robust label
-    const map = new Map();
-    (rows || []).forEach(b => {
-      const id = String(b._id || '');
-      const v = b.values || {};
-      const label =
-        (v['Business Name'] || v.businessName || v.Name || v.name || '').trim() || '(Untitled)';
-      if (id && !map.has(id)) map.set(id, { id, label });
+    const params = new URLSearchParams({
+      sort: JSON.stringify({ "Business Name": 1, "Name": 1, createdAt: 1 }),
+      limit: "500",
+      ts: Date.now().toString()
     });
 
-    __BIZ_CACHE = Array.from(map.values());
-    fillBusinessSelect(sel, __BIZ_CACHE);
-    __BIZ_FILLED_ONCE = true;
-  } catch (e) {
-    console.error('[businesses] load failed', e);
-    sel.innerHTML = `<option value="">⚠️ Failed to load</option>`;
+    const res = await fetch(`/api/records/Business?${params}`, {
+      credentials: "include",
+      cache: "no-store"
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const rows = await res.json();
+
+    // Filter soft-deleted; choose a label robustly; sort alpha
+    const options = (rows || [])
+      .filter(r => {
+        const v = r.values || {};
+        const isDeleted = !!getV(v, "is Deleted", "isDeleted");
+        return !isDeleted && !r.deletedAt;
+      })
+      .map(r => ({
+        id: r._id,
+        label:
+          getV(r.values, "Business Name", "businessName", "Name", "name") ||
+          "(Untitled)"
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    // Populate dropdown
+    for (const b of options) {
+      const opt = document.createElement("option");
+      opt.value = b.id;
+      opt.textContent = b.label;
+      dropdown.appendChild(opt);
+    }
+  } catch (err) {
+    console.error("Error loading businesses:", err);
+  } finally {
+    dropdown.disabled = false;
   }
 }
-
 
 // Change handlers (guarded)
 document.getElementById("appointment-business")?.addEventListener("change", async function () {
@@ -1842,119 +1618,64 @@ document.getElementById("show-all-clients")?.addEventListener("change", async fu
 });
 
 //Done
-// helpers you already have above:
-// - vget, buildClientLabel, normalizeRefId, labelFromAppt
-// - clientsReqId (number)
-
 async function loadAllClientsForAppointments() {
-  const sel = document.getElementById("appointment-client");
-  if (!sel) return;
+  const dropdown = document.getElementById("appointment-client");
+  if (!dropdown) return;
 
-  sel.disabled = true;
-  const myReq = ++clientsReqId;
+  dropdown.innerHTML = `<option value="">-- Select Client --</option>`;
+  dropdown.disabled = true;
 
-  // if we're editing an appt, reuse its id/label when showing "All"
-  let selectClientId = sel.dataset.editId    || "";
-  let preselectLabel = sel.dataset.editLabel || "";
-
-  sel.innerHTML = `<option value="">-- Select Client --</option>`;
+  // tiny helper to read the first existing key
+  const getV = (v, ...keys) => {
+    for (const k of keys) if (v && v[k] != null) return v[k];
+    return undefined;
+  };
 
   try {
-    const byId = new Map();
-
-    // 1) All real Client records I can see
-    const qs = new URLSearchParams({
+    const params = new URLSearchParams({
+      sort: JSON.stringify({ "First Name": 1, "Last Name": 1, createdAt: 1 }),
       limit: "1000",
-      sort: JSON.stringify({ "First Name": 1, "Last Name": 1 }),
       ts: Date.now().toString()
     });
-    const r = await fetch(`/api/records/Client?${qs}`, {
+
+    const res = await fetch(`/api/records/Client?${params}`, {
       credentials: "include",
       cache: "no-store"
     });
-    if (myReq !== clientsReqId) return;
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    const rows = r.ok ? (await r.json()) : [];
-    (rows || []).forEach(doc => {
-      const v  = doc.values || {};
-      const id = String(doc._id || v._id || "");
-      if (!id) return;
-      byId.set(id, { id, label: buildClientLabel(v) });
-    });
+    const rows = await res.json();
 
-    // 2) Add clients derived from Appointments (private + public), no biz filter
-    const addFromAppts = (arr) => {
-      (arr || []).forEach(a => {
-        const v = a.values || a;
-        let cid = normalizeRefId(v["Client"]);
-        if (!cid) {
-          const em = (v["Client Email"] || "").trim().toLowerCase();
-          if (!em) return;                 // nothing stable to key by
-          cid = `virtual:${em}`;           // virtual id for “no Client row”
-        }
-        if (byId.has(cid)) return;
-        byId.set(cid, { id: cid, label: labelFromAppt(v) });
-      });
-    };
+    const clients = (rows || [])
+      // hide soft-deleted
+      .filter(r => {
+        const v = r.values || {};
+        const isDeleted = !!getV(v, "is Deleted", "isDeleted");
+        return !isDeleted && !r.deletedAt;
+      })
+      // build label robustly
+      .map(r => {
+        const v = r.values || {};
+        const first = getV(v, "First Name", "firstName", "Name", "name") || "";
+        const last  = getV(v, "Last Name", "lastName") || "";
+        const email = getV(v, "Email", "email") || "";
+        const label = (first || last) ? `${first} ${last}`.trim() : (email || "(No name)");
+        return { id: r._id, label };
+      })
+      // sort A–Z
+      .sort((a, b) => a.label.localeCompare(b.label));
 
-    // private appts I can access
-    try {
-      const ra = await fetch(`/api/records/Appointment?limit=1000&ts=${Date.now()}`, {
-        credentials: "include",
-        cache: "no-store"
-      });
-      if (ra.ok) addFromAppts(await ra.json());
-    } catch {}
-
-    // public appts (catch self-bookings that aren’t in my private list)
-    try {
-      addFromAppts(await publicList("Appointment", { ts: Date.now() }));
-    } catch {}
-
-    // 3) Hydrate any “(Client)” label from the Client doc if it exists
-    const toHydrate = Array.from(byId.values()).filter(c => !c.label || c.label === "(Client)");
-    await Promise.all(toHydrate.map(async (c) => {
-      // skip virtual ids
-      if (c.id.startsWith("virtual:")) return;
-      try {
-        const rr = await fetch(`/api/records/Client/${encodeURIComponent(c.id)}?ts=${Date.now()}`, {
-          credentials: "include",
-          headers: { Accept: "application/json" }
-        });
-        if (!rr.ok) return;
-        const rec = await rr.json();
-        const better = buildClientLabel(rec?.values || {});
-        if (better && better !== "(Client)") byId.set(c.id, { id: c.id, label: better });
-      } catch {}
-    }));
-
-    // 4) Render A–Z
-    const list = Array.from(byId.values()).sort((a,b) => a.label.localeCompare(b.label));
-    sel.innerHTML = `<option value="">-- Select Client --</option>`;
-    for (const c of list) {
+    // populate
+    for (const c of clients) {
       const opt = document.createElement("option");
       opt.value = c.id;
       opt.textContent = c.label;
-      sel.appendChild(opt);
-    }
-
-    // 5) Preselect the current editing client if we have one
-    if (selectClientId) {
-      const exists = !!sel.querySelector(`option[value="${CSS.escape(String(selectClientId))}"]`);
-      if (!exists) {
-        const opt = document.createElement("option");
-        opt.value = String(selectClientId);
-        opt.textContent = preselectLabel || "(Client)";
-        opt.selected = true;
-        sel.appendChild(opt);
-      } else {
-        sel.value = String(selectClientId);
-      }
+      dropdown.appendChild(opt);
     }
   } catch (err) {
     console.error("❌ Failed to load all clients for appointments:", err);
   } finally {
-    if (myReq === clientsReqId) sel.disabled = false;
+    dropdown.disabled = false;
   }
 }
 
@@ -2071,175 +1792,90 @@ window.loadAppointmentServices = loadAppointmentServices;
 
 // Render Clients
 let clientsReqId = 0;
-
-function vget(v, ...keys) {
-  for (const k of keys) if (v && v[k] != null && String(v[k]).trim() !== '') return String(v[k]).trim();
-  return '';
-}
-
-function buildClientLabel(v = {}) {
-  const cname = vget(v, 'Client Name', 'Name', 'Full Name');
-  const first = vget(v, 'First Name', 'firstName', 'First name');
-  const last  = vget(v, 'Last Name',  'lastName',  'Last name');
-  const full  = [first, last].filter(Boolean).join(' ').trim();
-  const email = vget(v, 'Email', 'email');
-  const phone = vget(v, 'Phone Number', 'phone', 'phoneNumber');
-  return cname || full || email || (phone ? phone : '(Client)');
-}
-
-// ------- helpers (put near the top of the file once) -------
-function normalizeRefId(ref) {
-  if (!ref) return "";
-  if (typeof ref === "string") return ref;
-  return String(ref._id || ref.id || "");
-}
-
-function matchesBusiness(values, bizId) {
-  if (!bizId || bizId === "all") return true;
-  const b = values?.["Business"];
-  if (!b) return false;
-  if (typeof b === "string") return String(b) === String(bizId);
-  return String(b._id || b.id || "") === String(bizId);
-}
-
-function labelFromRecord(v = {}) {
-  const fn = (v["First Name"] || v.firstName || "").trim();
-  const ln = (v["Last Name"]  || v.lastName  || "").trim();
-  const cn = (v["Client Name"] || "").trim();
-  const em = (v["Email"] || v.email || "").trim();
-  const full = [fn, ln].filter(Boolean).join(" ").trim();
-  return cn || full || em || "(Client)";
-}
-
-function labelFromAppt(v = {}) {
-  const cn = (v["Client Name"] || "").trim();
-  const fn = (v["Client First Name"] || "").trim();
-  const ln = (v["Client Last Name"]  || "").trim();
-  const em = (v["Client Email"] || "").trim();
-  const full = [fn, ln].filter(Boolean).join(" ").trim();
-  return cn || full || em || "(Client)";
-}
-
-async function loadAppointmentClients(
-  businessId,
-  { selectClientId = "", preselectLabel = "" } = {}
-) {
+// Render Clients (merge both Business ref shapes, then fallback)
+async function loadAppointmentClients(businessId, { selectClientId = "" } = {}) {
   const sel = document.getElementById("appointment-client");
   if (!sel) return;
 
-  sel.disabled = true;
-  const myReq = ++clientsReqId;
-
-  // reuse stored edit metadata when switching biz back to the editing one
-  if (!selectClientId && String(sel.dataset.editBizId || '') === String(businessId || '')) {
-    selectClientId = sel.dataset.editId    || "";
-    preselectLabel = sel.dataset.editLabel || "";
+  // invalid / unset business
+  if (!businessId || businessId === "all") {
+    sel.innerHTML = `<option value="">-- Select Business First --</option>`;
+    sel.disabled = false;
+    return;
   }
 
-  // reset UI
   sel.innerHTML = `<option value="">-- Select Client --</option>`;
-  if (!businessId || businessId === "all") { sel.disabled = false; return; }
+  sel.disabled = true;
 
   try {
-    // 1) real Client records for this Business (both ref shapes)
+    // Primary: real Client records for this business (match both id shapes)
     const qs = new URLSearchParams({
       where: JSON.stringify({
-        $or: [{ "Business": businessId }, { "Business": { _id: businessId } }]
+        $or: [
+          { "Business": businessId },
+          { "Business": { _id: businessId } }
+        ]
       }),
       limit: "1000",
-      sort: JSON.stringify({ "First Name": 1, "Last Name": 1 }),
-      ts: Date.now().toString()
+      sort: JSON.stringify({ "First Name": 1, "Last Name": 1 })
     });
 
-    const res = await fetch(`/api/records/Client?${qs}`, {
+    const res = await fetch(`/api/records/Client?${qs.toString()}`, {
       credentials: "include",
       cache: "no-store"
     });
-    if (myReq !== clientsReqId) return; // a newer call started
 
-    const byId = new Map();
-    const rows = res.ok ? (await res.json()) : [];
+    let rows = [];
+    if (res.ok) rows = await res.json();
 
-    (rows || []).forEach(r => {
-      const v  = r.values || {};
-      const id = String(r._id || v._id || '');
-      if (!id) return;
-      byId.set(id, { id, label: buildClientLabel(v) });
-    });
+    // Fallback: derive clients from appointments (public + private)
+    if (!rows?.length) {
+      const [priv, pub] = await Promise.all([
+        fetchAppointments({ "Business": businessId }),
+        publicList("Appointment", { Business: businessId })
+      ]);
 
-    // 2) add clients derived from Appointments (private + public)
-    const addFromAppts = (arr) => {
-      (arr || []).forEach(r => {
+      const byId = new Map();
+      [...(priv || []), ...(pub || [])].forEach(r => {
         const v = r.values || r;
-        let cid = normalizeRefId(v['Client']);
-        if (!cid) {
-          const em = vget(v, 'Client Email').toLowerCase();
-          if (!em) return;               // nothing stable to key by
-          cid = `virtual:${em}`;         // virtual id so it shows in list
+        const cid = getId(v["Client"]);
+        if (!cid) return;
+
+        if (!byId.has(cid)) {
+          const fn = (v["Client First Name"] || "").trim();
+          const ln = (v["Client Last Name"]  || "").trim();
+          const label = (v["Client Name"] || `${fn} ${ln}`.trim() || "Client").trim();
+          byId.set(cid, { _id: cid, values: { "First Name": label } });
         }
-        if (byId.has(cid)) return;
-        byId.set(cid, { id: cid, label: labelFromAppt(v) });
       });
-    };
 
-    // private appts (both Business shapes)
-    for (const where of [{ "Business": businessId }, { "Business": { _id: businessId } }]) {
-      const qsA = new URLSearchParams({ where: JSON.stringify(where), limit: "1000", ts: Date.now().toString() });
-      try {
-        const ra = await fetch(`/api/records/Appointment?${qsA}`, { credentials: "include", cache: "no-store" });
-        if (ra.ok) addFromAppts(await ra.json());
-      } catch {}
+      rows = Array.from(byId.values());
     }
-    // public appts too (in case some were created publicly)
-    try {
-      addFromAppts(await publicList("Appointment", { Business: businessId, ts: Date.now() }));
-    } catch {}
 
-    // 3) hydrate any “(Client)” entries now that the map is populated
-    const toHydrate = Array.from(byId.values()).filter(c => !c.label || c.label === '(Client)');
-    await Promise.all(toHydrate.map(async (c) => {
-      try {
-        const r = await fetch(`/api/records/Client/${encodeURIComponent(c.id)}?ts=${Date.now()}`, {
-          credentials: 'include',
-          headers: { Accept: 'application/json' }
-        });
-        if (!r.ok) return;
-        const rec = await r.json();
-        const better = buildClientLabel(rec?.values || {});
-        if (better && better !== '(Client)') byId.set(c.id, { id: c.id, label: better });
-      } catch {}
-    }));
+    // Build dropdown options
+    const opts = (rows || []).map(r => {
+      const v = r.values || {};
+      const label =
+        [v["First Name"], v["Last Name"]].filter(Boolean).join(" ").trim() ||
+        v["Name"] || v["Client Name"] || "(Client)";
+      return { id: r._id, label };
+    }).sort((a, b) => a.label.localeCompare(b.label));
 
-    // 4) render A–Z
-    const list = Array.from(byId.values()).sort((a,b) => a.label.localeCompare(b.label));
+    // Render
     sel.innerHTML = `<option value="">-- Select Client --</option>`;
-    for (const c of list) {
-      const opt = document.createElement("option");
-      opt.value = c.id;
-      opt.textContent = c.label;
-      sel.appendChild(opt);
-    }
-
-    // 5) preselect (or synthesize) the editing client
-    if (selectClientId) {
-      const exists = !!sel.querySelector(`option[value="${CSS.escape(String(selectClientId))}"]`);
-      if (!exists) {
-        const opt = document.createElement("option");
-        opt.value = String(selectClientId);
-        opt.textContent = preselectLabel || "(Client)";
-        opt.selected = true;
-        sel.appendChild(opt);
-      } else {
-        sel.value = String(selectClientId);
-      }
+    for (const o of opts) {
+      const el = document.createElement("option");
+      el.value = o.id;
+      el.textContent = o.label;
+      if (selectClientId && String(selectClientId) === String(o.id)) el.selected = true;
+      sel.appendChild(el);
     }
   } catch (e) {
     console.error("[loadAppointmentClients] failed:", e);
   } finally {
-    if (myReq === clientsReqId) sel.disabled = false; // always re-enable for the latest call
+    sel.disabled = false;
   }
 }
-
 
 
 
@@ -2346,8 +1982,7 @@ function upsertAppointmentCard(appt) {
   const height = Math.max(1, Math.ceil((Number(appt.duration) || 0) / 15)) * 15 - 1;
 
   // --- content ---
- const clientLabel  = getClientName(appt);
-
+  const clientLabel  = (appt.clientName || "(No client)");
   const serviceNames = (appt.serviceIds || [])
     .map(id => lookupName(window.__serviceMap, String(id)))
     .filter(Boolean);
@@ -2356,37 +1991,25 @@ function upsertAppointmentCard(appt) {
     : "";
 
   // --- ensure a card exists ---
- // --- ensure a card exists ---
-let card = grid.querySelector(`.appointment-card[data-id="${appt._id}"]`);
-if (!card) {
-  card = document.createElement("div");
-  card.className = "appointment-card";
-  grid.appendChild(card);
-}
-
-// always keep dataset in sync (even if card already existed)
-card.dataset.id = String(appt._id);
-
-// bind click once; read the id from dataset at click time
-if (!card.dataset.bound) {
- card.addEventListener("click", () => {
-   if (!apptId) return console.warn('no id on card click', appt);
-   if (typeof openAppointmentEditor === "function") {
-     openAppointmentEditor(apptId);
-   } else {
-     openAppointmentPopup();
-   }
- });
-  card.dataset.bound = "1";
-}
+  let card = grid.querySelector(`.appointment-card[data-id="${appt._id}"]`);
+  if (!card) {
+    card = document.createElement("div");
+    card.className = "appointment-card";
+    card.dataset.id = String(appt._id);
+    card.addEventListener("click", () => {
+      if (typeof openAppointmentEditor === "function") {
+        openAppointmentEditor(String(appt._id));
+      } else if (typeof openAppointmentPopup === "function") {
+        openAppointmentPopup();
+      }
+    });
+    grid.appendChild(card);
+  }
 
   // --- position & size ---
   card.style.position  = "absolute";
-card.dataset.dayIndex = String(weekIdx);
-const { colW, gap } = getColumnMetrics();
-card.style.left  = `${Math.round(weekIdx * (colW + gap))}px`;
-card.style.width = `${colW}px`;
-
+  card.style.left      = `calc(${weekIdx} * ${slotWidthPercent}%)`;
+  card.style.width     = `${slotWidthPercent}%`;
   card.style.top       = `${topPx}px`;
   card.style.height    = `${height}px`;
   card.style.boxSizing = "border-box";
@@ -2395,13 +2018,11 @@ card.style.width = `${colW}px`;
   card.style.padding   = "4px 6px";
 
   // --- content ---
- const clientDisplay = getClientName(appt);
-card.innerHTML = `
-  <div class="appt-time"><strong>${startLabel} – ${endLabel}</strong></div>
-  <div class="appt-client">${escapeHtml(clientDisplay || "(No client)")}</div>
-  ${servicesHtml}
-`;
-
+  card.innerHTML = `
+    <div class="appt-time"><strong>${startLabel} – ${endLabel}</strong></div>
+    <div class="appt-client">${clientLabel}</div>
+    ${servicesHtml}
+  `;
 
   // Optional debug
   // console.log('[upsert]', { date: appt.date, weekIdx, topPx, height });
@@ -2541,28 +2162,21 @@ async function ensureClientId({ businessId, firstName, lastName, email, phone })
   }
 
   // create new
-// inside ensureClientId() when you POST the new Client:
-const clientName =
-  [firstName, lastName].filter(Boolean).join(' ').trim() ||
-  email || phone || 'Client';
-
-const createRes = await fetch(API_URL('Client'), {
-  method: 'POST',
-  credentials: 'include',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    values: {
-      "Business":     businessId,
-      "First Name":   firstName || '',
-      "Last Name":    lastName  || '',
-      "Email":        email     || '',
-      "Phone Number": phone     || '',
-      "Client Name":  clientName,    // 👈 add this
-      "is Deleted":   false
-    }
-  })
-});
-
+  const createRes = await fetch(API_URL('Client'), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      values: {
+        "Business":     businessId,
+        "First Name":   firstName || '',
+        "Last Name":    lastName  || '',
+        "Email":        email     || '',
+        "Phone Number": phone     || '',
+        "is Deleted":   false
+      }
+    })
+  });
   const created = await createRes.json();
   if (!createRes.ok) throw new Error(created?.message || `Create client HTTP ${createRes.status}`);
   return { clientId: created._id, createdNew: true };
@@ -2634,32 +2248,9 @@ if (!clientId) {
 
     // 2) Build Appointment values using OBJECT refs (server normalizer + enrichment expects these)
     const time24 = to24h(timeInput);
-   // --- Denormalize client name/email from the Client record (don’t trust dropdown label) ---
-let dnFirst = (clientFirstName || '').trim();
-let dnLast  = (clientLastName  || '').trim();
-let dnEmail = (clientEmail     || '').trim();
-
-try {
-  if (clientId) {
-    const r = await fetch(`/api/records/Client/${encodeURIComponent(clientId)}?ts=${Date.now()}`, {
-      credentials: 'include',
-      headers: { Accept: 'application/json' }
-    });
-    if (r.ok) {
-      const rec = await r.json();
-      const cv  = rec?.values || {};
-      dnFirst = (cv['First Name'] || dnFirst).trim();
-      dnLast  = (cv['Last Name']  || dnLast ).trim();
-      dnEmail = (cv['Email']      || dnEmail).trim();
-    }
-  }
-} catch {}
-
-const dnFull = [dnFirst, dnLast].filter(Boolean).join(' ').trim();
-
-// Use this everywhere for display + storage
-const prettyClient = dnFull || dnEmail || 'Client';
-
+    const prettyClient =
+      (clientFirstName || clientLastName) ? `${clientFirstName} ${clientLastName}`.trim()
+      : document.querySelector('#appointment-client option:checked')?.textContent?.trim() || 'Client';
 
     const values = {
       // 🔴 send references as {_id} so your POST route (and enrichment) can resolve them
@@ -2679,12 +2270,6 @@ const prettyClient = dnFull || dnEmail || 'Client';
       "is Canceled":   false,
       "Hold":          false
     };
-// Denormalize client info so UI (and public queries) can show it without expanding refs
-values["Client Name"]       = prettyClient;
-values["Client First Name"] = clientFirstName || values["Client First Name"] || "";
-values["Client Last Name"]  = clientLastName  || values["Client Last Name"]  || "";
-// If you have the email in this context, store it too (optional)
-values["Client Email"]      = clientEmail || values["Client Email"] || "";
 
     // 3) Create or Update
     const isEdit = !!window.currentEditAppointmentId;
@@ -2737,33 +2322,38 @@ if (res.ok) {
 
 
 
+
+// ✅ DOM ready logic
 document.addEventListener("DOMContentLoaded", async () => {
   console.log("✅ DOM fully loaded");
-
   updateMonthYear();
-  updateWeekDates(currentWeekStart);   // <-- only this call
+  updateWeekDates();
   generateHourColumn();
   generateTimeGrid();
-  buildHourLabels();
-  buildTimeGrid();
+  updateWeekDates(currentWeekStart);
+buildHourLabels();
+buildTimeGrid();
+   await loadAppointments();
+  
 
-  await loadAppointments();
-
-  // 🕗 Auto-scroll to 8AM
+    // 🕗 Auto-scroll to 8AM
   setTimeout(() => {
-    const wrapper = document.querySelector(".calendar-wrapper");
-    if (wrapper) {
-      const slotHeight = 15;
-      const eightAMOffset = 8 * 4 * slotHeight; // = 480px
-      wrapper.scrollTop = eightAMOffset;
-      console.log("🔃 Scrolled to 8AM:", eightAMOffset);
-    }
-  }, 100);
+const wrapper = document.querySelector(".calendar-wrapper");
+if (wrapper) {
+  const slotHeight = 15;
+  const eightAMOffset = 8 * 4 * slotHeight; // = 480px
+  wrapper.scrollTop = eightAMOffset;
+  console.log("🔃 Scrolled to 8AM:", eightAMOffset);
+}
 
-  // Re-fetch when the business changes
-  document.getElementById("business-dropdown")?.addEventListener("change", () => {
-    loadAppointments();
+}, 100); // Delay ensures layout is complete
+
+
+    document.getElementById("business-dropdown").addEventListener("change", () => {
+    loadAppointments(); // Re-fetch appointments when business changes
   });
+
+
 });
 
 //Prevent appointment from submitting if new client is not selected and dropdown is not selected 
@@ -2816,17 +2406,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // tolerant value getter
 function vget(v, ...keys) {
-  for (const k of keys) if (v && v[k] != null && String(v[k]).trim() !== '') return String(v[k]).trim();
-  return '';
+  for (const k of keys) if (v && v[k] != null && v[k] !== '') return v[k];
+  return undefined;
 }
 
 async function fetchRecords(type, where = {}, limit = 1000) {
   const qs = new URLSearchParams({
-   where: JSON.stringify(where),
-   limit: "500",
-   includeRefField: "1",   // ⬅️ expand refs (Client, Service(s), etc.)
-   ts: Date.now().toString()
- });
+    where: JSON.stringify(where),
+    limit: String(limit),
+    ts: Date.now()
+  });
   const res = await fetch(`/api/records/${encodeURIComponent(type)}?${qs}`, {
     credentials: 'include', cache: 'no-store'
   });
@@ -2931,7 +2520,6 @@ async function buildServiceMap(businessId, includeAll = false) {
 
 //DONE new appointment
 // ✅ Canonical popup (CREATE vs EDIT based on `appointment` param)
-// ✅ Canonical popup (CREATE vs EDIT based on `appointment` param)
 async function openAppointmentPopup(appointment = null) {
   // helpers
   const getV = (v, ...keys) => { for (const k of keys) if (v && v[k] != null) return v[k]; };
@@ -2941,18 +2529,12 @@ async function openAppointmentPopup(appointment = null) {
     return val || '';
   };
 
-  // Load businesses ONCE
-  if (!window.__bizLoadedOnce) {
-    await loadAppointmentBusinesses();
-    window.__bizLoadedOnce = true;
-  }
-
   const form       = document.getElementById("create-appointment-form");
   const popup      = document.getElementById("popup-create-appointment");
   const overlay    = document.getElementById("popup-overlay");
   const titleEl    = document.getElementById("appointment-popup-title");
   const deleteBtn  = document.getElementById("delete-appointment-btn");
-  const cancelBtn  = document.getElementById("cancel-appointment-btn");
+  const cancelBtn  = document.getElementById("cancel-appointment-btn");  // 👈 NEW
 
   const bizSel     = document.getElementById("appointment-business");
   const svcSel     = document.getElementById("appointment-service");
@@ -2964,9 +2546,11 @@ async function openAppointmentPopup(appointment = null) {
   // expose a global flag you already use
   window.currentEditAppointmentId = appointment ? (appointment._id || appointment.id) : null;
 
+  // Title & destructive actions visibility
   if (titleEl)  titleEl.textContent = window.currentEditAppointmentId ? "Edit Appointment" : "Add Appointment";
   if (deleteBtn) deleteBtn.style.display = window.currentEditAppointmentId ? "inline-block" : "none";
 
+  // 👇 NEW: cancel button visibility + appt id
   if (cancelBtn) {
     if (window.currentEditAppointmentId) {
       cancelBtn.style.display = "inline-block";
@@ -2977,11 +2561,14 @@ async function openAppointmentPopup(appointment = null) {
     }
   }
 
-  // reset base UI when creating — DO NOT clear the business select here
+  // reset base UI when creating
   if (form && !appointment) form.reset();
   if (svcSel)    svcSel.innerHTML    = `<option value="">-- Select Service --</option>`;
   if (clientSel) clientSel.innerHTML = `<option value="">-- Select Client --</option>`;
-  // ❌ do NOT do: if (bizSel) bizSel.innerHTML = `...`
+  if (bizSel)    bizSel.innerHTML    = `<option value="">-- Select Business --</option>`;
+
+  // ALWAYS load businesses
+  await loadAppointmentBusinesses();
 
   if (!appointment) {
     // ===== CREATE MODE =====
@@ -2994,48 +2581,31 @@ async function openAppointmentPopup(appointment = null) {
     if (dateInp) dateInp.value = "";
     if (timeInp) timeInp.value = "";
     if (durInp)  durInp.value  = "";
+
   } else {
-// ===== EDIT MODE =====
-const v = appointment.values || {};
-const businessId = String(firstId(getV(v, "Business","businessId","Business Id")) || "");
-const clientId   = String(firstId(getV(v, "Client","clientId")) || "");
-const preselectLabel =
-  (v["Client Name"]
-   || [v["Client First Name"], v["Client Last Name"]].filter(Boolean).join(" ").trim()
-   || v["Client Email"]
-   || "").trim();
+    // ===== EDIT MODE =====  (prefill fields from record)
+    const v = appointment.values || {};
 
-// 👇 remember which client we’re editing, so we can re-insert it after switches
-if (clientSel) {
-  clientSel.dataset.editId    = clientId;        // real client id (if there is one)
-  clientSel.dataset.editLabel = preselectLabel;  // denormalized name/email
-  clientSel.dataset.editBizId = businessId;      // only auto-insert when this biz is selected
-}
-
-if (bizSel && businessId) bizSel.value = businessId;
-
-if (businessId) {
-  await loadAppointmentServices(businessId);
-  await loadAppointmentClients(businessId, { selectClientId: clientId, preselectLabel });
-}
-
+    const businessId = firstId(getV(v, "Business", "businessId", "Business Id"));
+    const clientId   = firstId(getV(v, "Client", "clientId"));
     const serviceRaw = getV(v, "Service(s)", "Service", "serviceId", "service");
-    const serviceId  = firstId(serviceRaw) || "";
-    if (svcSel && serviceId) svcSel.value = serviceId;
+    const serviceId  = firstId(serviceRaw);
 
-    if (clientSel && clientId) clientSel.value = clientId;
-// after: const businessId = ...; const clientId = ...; const preselectLabel = ...;
-if (clientSel) {
-  clientSel.dataset.editId    = clientId;         // remember which client we're editing
-  clientSel.dataset.editLabel = preselectLabel;   // label to show if not in the fetched list
-  clientSel.dataset.editBizId = businessId;       // only auto-insert when this biz is selected
-}
+    if (bizSel && businessId) bizSel.value = businessId;
+
+    if (businessId) {
+      await loadAppointmentServices(businessId);
+      await loadAppointmentClients(businessId);
+    }
+
+    if (svcSel && serviceId)    svcSel.value    = serviceId;
+    if (clientSel && clientId)  clientSel.value = clientId;
 
     const dateVal = getV(v, "Date", "date") || "";
     if (dateInp) dateInp.value = String(dateVal).split("T")[0] || "";
 
     const timeVal = getV(v, "Time", "time", "Start Time") || "";
-    if (timeInp) timeInp.value = toTimeValue(timeVal);
+    if (timeInp) timeInp.value = toTimeValue(timeVal); // ensure "HH:mm"
 
     const duration = getV(v, "duration", "Duration", "Length", "length");
     if (durInp && duration != null) durInp.value = duration;
@@ -3282,153 +2852,107 @@ function getV(v, ...keys) {
  * Load and render the client list.
  * @param {string} businessId - pass a Business _id to filter, or 'all' / '' for all.
  */
-// ------- ALL CLIENTS POPUP LIST -------
-// Shows real Client records + self-booked clients derived from Appointments
 async function loadClientList(businessId = 'all') {
   const container = document.getElementById("client-list-container");
   if (!container) return;
   container.innerHTML = "<p>Loading...</p>";
 
-  async function fetchJSON(url) {
-    const r = await fetch(url, { credentials: 'include', cache: 'no-store', headers:{Accept:'application/json'} });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
+  // helper to match Business whether it's stored as string or {_id}
+  function recordMatchesBusiness(rec, bizId) {
+    if (!bizId || bizId === 'all') return true;
+    const v = rec?.values || {};
+    const b = v["Business"];
+    if (!b) return false;
+    if (typeof b === "string") return b === bizId;
+    if (typeof b === "object" && b._id) return String(b._id) === String(bizId);
+    return false;
   }
 
-  // build a single index for dedupe
-  const byId = new Map();
+  async function fetchClients(whereObj, limit = 1000) {
+    const params = new URLSearchParams({
+      where: JSON.stringify(whereObj || {}),
+      limit: String(limit),
+      ts: Date.now().toString()
+    });
+    const res = await fetch(`/api/records/Client?${params.toString()}`, {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(()=> '');
+      throw new Error(`HTTP ${res.status} ${msg}`);
+    }
+    return res.json();
+  }
 
   try {
-    // ---------- A) REAL CLIENT RECORDS ----------
-    {
-      const where = { "is Deleted": false };
-      if (businessId && businessId !== "all") {
-        // try both shapes
-        const qs1 = new URLSearchParams({
-          where: JSON.stringify({ ...where, "Business": businessId }),
-          limit: "1000",
-          ts: Date.now().toString()
-        });
-        let rows = await fetchJSON(`/api/records/Client?${qs1}`);
+    let rows = [];
 
-        if (!rows?.length) {
-          const qs2 = new URLSearchParams({
-            where: JSON.stringify({ ...where, "Business": { _id: businessId } }),
-            limit: "1000",
-            ts: Date.now().toString()
-          });
-          rows = await fetchJSON(`/api/records/Client?${qs2}`);
-        }
+    if (businessId && businessId !== 'all') {
+      // 1) try Business as plain id
+      rows = await fetchClients({ "Business": businessId, "is Deleted": false });
 
-        // defensive filter anyway
-        for (const r of rows || []) {
-          const v = r.values || {};
-          if (!matchesBusiness(v, businessId)) continue;
-          if (r.deletedAt || v["is Deleted"]) continue;
-          byId.set(String(r._id), {
-            id: String(r._id),
-            label: labelFromRecord(v),
-            email: (v["Email"] || v.email || "").trim()
-          });
-        }
+      // 2) if none, try Business as {_id: ...}
+      if (!Array.isArray(rows) || rows.length === 0) {
+        rows = await fetchClients({ "Business": { _id: businessId }, "is Deleted": false });
+      }
+
+      // 3) still none? fetch all (is Deleted false) and filter client-side by Business
+      if (!Array.isArray(rows) || rows.length === 0) {
+        rows = await fetchClients({ "is Deleted": false });
+        rows = rows.filter(r => recordMatchesBusiness(r, businessId));
       } else {
-        // ALL businesses
-        const qs = new URLSearchParams({
-          where: JSON.stringify(where),
-          limit: "1000",
-          ts: Date.now().toString()
-        });
-        const rows = await fetchJSON(`/api/records/Client?${qs}`);
-        for (const r of rows || []) {
-          const v = r.values || {};
-          if (r.deletedAt || v["is Deleted"]) continue;
-          byId.set(String(r._id), {
-            id: String(r._id),
-            label: labelFromRecord(v),
-            email: (v["Email"] || v.email || "").trim()
-          });
-        }
-      }
-    }
-
-    // ---------- B) CLIENTS DERIVED FROM APPOINTMENTS ----------
-    // private appointments (support both Business shapes) + public appointments
-    const addFromAppts = (arr = []) => {
-      for (const row of arr) {
-        const v   = row.values || row;
-        if (businessId !== 'all' && !matchesBusiness(v, businessId)) continue;
-
-        // prefer the true Client ref id; otherwise synthesize a stable virtual id
-        let key = normalizeRefId(v["Client"]);
-        if (!key) {
-          const em = (v["Client Email"] || "").trim().toLowerCase();
-          if (!em) continue; // no dedupe key available
-          key = `virtual:${em}`;
-        }
-
-        if (!byId.has(key)) {
-          byId.set(key, {
-            id: key,
-            label: labelFromAppt(v),
-            email: (v["Client Email"] || "").trim()
-          });
-        }
-      }
-    };
-
-    // private appts
-    if (businessId && businessId !== "all") {
-      for (const where of [{ "Business": businessId }, { "Business": { _id: businessId } }]) {
-        const qs = new URLSearchParams({
-          where: JSON.stringify(where),
-          limit: "1000",
-          ts: Date.now().toString()
-        });
-        try { addFromAppts(await fetchJSON(`/api/records/Appointment?${qs}`)); } catch {}
+        // defensively filter anyway
+        rows = rows.filter(r => recordMatchesBusiness(r, businessId));
       }
     } else {
-      try {
-        addFromAppts(await fetchJSON(`/api/records/Appointment?limit=1000&ts=${Date.now()}`));
-      } catch {}
+      // all businesses, just exclude deleted
+      rows = await fetchClients({ "is Deleted": false });
     }
 
-    // public appts (read-only list)
-    try {
-      const params = new URLSearchParams({ dataType: 'Appointment', ts: Date.now().toString() });
-      if (businessId && businessId !== 'all') params.append('Business', businessId);
-      const pub = await fetchJSON(`/public/records?${params}`);
-      addFromAppts(pub);
-    } catch {}
+    // Map to flat client objects
+    const clients = (rows || [])
+      .filter(r => !r.deletedAt && !(r.values?.["is Deleted"]))
+      .map(r => {
+        const v = r.values || {};
+        // extract Business id robustly for later use if needed
+        const bVal = getV(v, "Business", "businessId");
+        const bizIdVal = (bVal && typeof bVal === "object" && bVal._id) ? bVal._id : bVal;
 
-    // ---------- C) Render ----------
-    const list = Array.from(byId.values())
-      .sort((a, b) => a.label.localeCompare(b.label));
+        return {
+          _id: r._id,
+          firstName:   getV(v, "First Name", "firstName"),
+          lastName:    getV(v, "Last Name",  "lastName"),
+          email:       getV(v, "Email",      "email"),
+          phone:       getV(v, "Phone Number","phone", "phoneNumber"),
+          businessId:  bizIdVal || '',
+        };
+      });
 
+    // Sort A→Z by full name
+    clients.sort((a, b) => {
+      const nameA = `${a.firstName || ""} ${a.lastName || ""}`.trim().toLowerCase();
+      const nameB = `${b.firstName || ""} ${b.lastName || ""}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    // Render
     container.innerHTML = "";
-    if (!list.length) {
+    if (!clients.length) {
       container.innerHTML = `<p>No clients yet.</p>`;
       return;
     }
 
-    for (const c of list) {
-      const div = document.createElement("div");
-      div.className = "clickable-client";
-      div.style.padding = "8px 0";
-      div.textContent = c.label || "(Client)";
-      // turn a "virtual:*" into a lightweight detail
-      div.addEventListener("click", () => {
-        const [first, ...rest] = (c.label || "").split(" ");
-        showClientDetail({
-          _id: c.id,
-          firstName: first || "",
-          lastName: rest.join(" ") || "",
-          email: c.email || "",
-          phone: "",
-          businessId: businessId === 'all' ? '' : businessId
-        });
-      });
-      container.appendChild(div);
-    }
+    clients.forEach(client => {
+      const name = `${client.firstName || ""} ${client.lastName || ""}`.trim() || "(No name)";
+      const item = document.createElement("div");
+      item.textContent = name;
+      item.classList.add("clickable-client");
+      item.style.padding = "8px 0";
+      item.addEventListener("click", () => showClientDetail(client));
+      container.appendChild(item);
+    });
+
   } catch (err) {
     console.error("❌ Failed to load clients:", err);
     container.innerHTML = "<p>Error loading clients.</p>";

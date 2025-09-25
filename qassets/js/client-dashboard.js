@@ -568,12 +568,267 @@ if (settingsForm && !settingsForm.dataset.bound) {
 
 
 })();
+//helper
+function fmtTime(raw) {
+  if (!raw) return "—";
+  return to12hSafe(raw);        // accepts "00:00", "0000", "5:00", "12:30 PM", etc.
+}
+function ymdLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 
-    // =========================================================
-    // 4. APPOINTMENT LISTING LOGIC
-    // =========================================================
-    
+// =========================================================
+// 4. APPOINTMENT LISTING + CANCEL (delegated)
+// =========================================================
+(function () {
+  const allContainer      = document.getElementById("all-appointments");
+  const upcomingContainer = document.getElementById("upcoming-appointments");
+  const pastContainer     = document.getElementById("past-appointments");
+  if (!allContainer || !upcomingContainer || !pastContainer) return;
+
+const fmtDate = (d) => {
+  if (!d) return "";
+  // If it's exactly "YYYY-MM-DD", format in LOCAL time (no UTC shift)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    const [y, m, day] = d.split("-").map(Number);
+    return new Date(y, m - 1, day).toLocaleDateString();
+  }
+  // Otherwise fall back to native parsing
+  return new Date(d).toLocaleDateString();
+};
+
+
+const fmtTime = (t) => {
+  // Prefer your robust converter
+  if (typeof to12hSafe === "function") return to12hSafe(t);
+  // Otherwise, if you have a global formatter, use it
+  if (typeof window.formatTime === "function") return window.formatTime(t);
+  // Fallback: show as-is
+  return t || "";
+};
+
+
+  const toStartDate = (appt) => {
+    const iso = appt.start || appt.startAt || null;
+    if (iso) {
+      const d = new Date(iso);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+    if (appt.date && appt.time) return new Date(`${appt.date}T${appt.time}`);
+    if (appt.date) return new Date(appt.date);
+    return new Date(NaN);
+  };
+
+  window.renderAppointments = function renderAppointments(appointments) {
+    allContainer.innerHTML = "";
+    upcomingContainer.innerHTML = "";
+    pastContainer.innerHTML = "";
+
+    const now = new Date();
+    if (!Array.isArray(appointments) || appointments.length === 0) {
+      allContainer.innerHTML = "<p>You have no upcoming appointments.</p>";
+      return;
+    }
+
+    appointments.forEach((appt) => {
+      const start   = toStartDate(appt);
+      const isValid = !Number.isNaN(start.getTime());
+      const isPast  = isValid ? start < now : false;
+
+      // ---- robust date/time extraction ----
+      const dateStr =
+        (typeof appt.date === "string" && appt.date) ||
+        (appt.startAt && appt.startAt.slice(0, 10)) ||
+        (isValid ? start.toISOString().slice(0, 10) : "") ||
+        (appt.values && appt.values.Date) ||
+        "";
+
+      let timeStr =
+        (typeof appt.time === "string" && appt.time) ||
+        (appt.startAt && appt.startAt.slice(11, 16)) ||
+        (isValid ? start.toTimeString().slice(0, 5) : "") ||
+        (appt.values && (appt.values.Time || appt.values["Start Time"])) ||
+        "";
+
+      // normalize to "HH:mm" if it's like "0000", "930", "5 PM", etc.
+      if (timeStr && !timeStr.includes(":")) {
+        if (/^\d{3,4}$/.test(timeStr)) {
+          const s = timeStr.padStart(4, "0");       // "930" -> "0930"
+          timeStr = `${s.slice(0, 2)}:${s.slice(2)}`; // -> "09:30"
+        } else if (typeof toTimeValueSafe === "function") {
+          timeStr = toTimeValueSafe(timeStr);       // "5 PM" -> "17:00"
+        }
+      }
+
+      const serviceName = appt.serviceName || appt.service?.name || "Appointment";
+      const proName     = appt.proName || appt.stylistName || appt.pro?.name || "Unknown Pro";
+      const duration    = appt.duration || appt.service?.duration;
+      const apptId      = appt._id || appt.id || appt.appointmentId || "";
+
+      const durationLine = duration ? `<p><strong>Duration:</strong> ${duration} minutes</p>` : "";
+      const bizLine = appt.businessSlug
+        ? `<p><strong>Business:</strong> <a href="/${appt.businessSlug}">${appt.businessSlug}</a></p>`
+        : "";
+
+      // destination (if you support clicking the card to navigate)
+      const href = appt.businessSlug
+        ? (appt.proSlug
+            ? `/${encodeURIComponent(appt.businessSlug)}?pro=${encodeURIComponent(appt.proSlug)}`
+            : `/${encodeURIComponent(appt.businessSlug)}`
+          )
+        : "";
+// DEBUG: why time may still be 24h?
+console.groupCollapsed('[appointments] time debug');
+console.log({
+  apptId,
+  raw: {
+    appt_time: appt.time,
+    appt_startAt: appt.startAt,
+    values_Time: appt.values?.Time,
+    values_StartTime: appt.values?.["Start Time"]
+  },
+  computed: {
+    isValid,
+    startISO: isValid ? start.toISOString() : null,
+    timeStr_normalized: timeStr,
+    hasColon: timeStr ? timeStr.includes(':') : null
+  },
+  formatters: {
+    hasTo12hSafe: typeof to12hSafe,
+    hasWindowFormatTime: typeof window.formatTime,
+    fmtTime_result: fmtTime(timeStr),
+    to12hSafe_result: (typeof to12hSafe === 'function') ? to12hSafe(timeStr) : null
+  }
+});
+console.groupEnd();
+
+      const cardHTML = `
+        <div class="appointment-card"
+             role="link" tabindex="0"
+             data-href="${href}"
+             data-appt-id="${apptId}"
+             data-business-id="${appt.businessId || ''}"
+             data-business-slug="${(appt.businessSlug || '').replace(/"/g,'&quot;')}"
+             data-pro-slug="${(appt.proSlug || '').replace(/"/g,'&quot;')}">
+          <div class="pro-card">
+            <p><strong>Pro:</strong> ${proName}</p>
+          </div>
+          <div class="appointment-info">
+            <h3>${serviceName}</h3>
+            <p><strong>Date:</strong> ${fmtDate(dateStr)}</p>
+            <p><strong>Time:</strong> ${fmtTime(timeStr)}</p>
+            ${durationLine}
+            ${bizLine}
+          </div>
+          <div class="appointment-actions">
+            ${!isPast ? `<button class="cancel-appointment-btn" data-id="${apptId}">Cancel</button>` : ""}
+          </div>
+        </div>
+      `;
+
+      console.log("rendering card for appt:", {
+        id: apptId,
+        proName,
+        businessId: appt.businessId,
+        businessSlug: appt.businessSlug,
+        proSlug: appt.proSlug,
+        href
+      });
+
+      allContainer.insertAdjacentHTML("beforeend", cardHTML);
+      (isPast ? pastContainer : upcomingContainer).insertAdjacentHTML("beforeend", cardHTML);
+    });
+  };
+
+// Cache so we don't keep calling the server
+// cache
+// cache
+const _navSlugCache = Object.create(null);
+
+// prefer booking-page slug, then business slug
+async function getNavSlugForBusiness(bizId) {
+  if (!bizId) return '';
+  if (_navSlugCache[bizId]) return _navSlugCache[bizId];
+
+  try {
+    const r1 = await fetch(`/api/public/booking-slug/by-business/${encodeURIComponent(bizId)}`, {
+      credentials: 'include', headers: { Accept: 'application/json' }
+    });
+    const j1 = await r1.json();
+    if (j1?.slug) return (_navSlugCache[bizId] = j1.slug);
+  } catch {}
+
+  try {
+    const r2 = await fetch(`/api/public/business-slug/${encodeURIComponent(bizId)}`, {
+      credentials: 'include', headers: { Accept: 'application/json' }
+    });
+    const j2 = await r2.json();
+    if (j2?.slug) return (_navSlugCache[bizId] = j2.slug);
+  } catch {}
+
+  return '';
+}
+
+// ONE delegated handler (attach once to #appointments-tab or document)
+const onClick = async (evt) => {
+  // cancel branch
+  const btn = evt.target.closest(".cancel-appointment-btn");
+  if (btn) {
+    const id = btn.dataset.id;
+    console.log("[cancel click]", { id, btn });
+    await cancelAppointment(id, btn);
+    return;
+  }
+
+  // card branch
+  const card = evt.target.closest(".appointment-card");
+  if (!card || evt.target.closest(".appointment-actions")) return;
+
+  console.groupCollapsed('[card click]');
+  console.log('dataset:', card.dataset);
+
+  let biz = card.dataset.businessSlug;
+  const pro = card.dataset.proSlug;
+  const businessId = card.dataset.businessId;
+
+  if (!biz && businessId) {
+    console.log('looking up slug for businessId:', businessId);
+    biz = await getNavSlugForBusiness(businessId);
+    console.log('lookup result slug:', biz);
+    if (biz) card.dataset.businessSlug = biz; // cache in DOM
+  }
+
+  if (!biz) {
+    console.warn('No slug; cannot navigate.', { businessId });
+    console.groupEnd();
+    return;
+  }
+
+  const url = pro
+    ? `/${encodeURIComponent(biz)}?pro=${encodeURIComponent(pro)}`
+    : `/${encodeURIComponent(biz)}`;
+
+  console.log('➡️ navigating to', url);
+  console.groupEnd();
+  window.location.href = url;
+};
+
+const listRoot = document.getElementById("appointments-tab") || document;
+if (!listRoot._apptClickBound) {
+  listRoot.addEventListener("click", onClick);
+  listRoot._apptClickBound = true;
+}
+
+
+})();
+
+
+
+
   // =========================================================
 // 4) CLIENT APPOINTMENTS (v2 endpoint + fallbacks)
 // =========================================================
@@ -586,7 +841,6 @@ if (settingsForm && !settingsForm.dataset.bound) {
   const containerAll = document.getElementById(ALL_ID);
   const containerUpcoming = document.getElementById(UPC_ID);
   const containerPast = document.getElementById(PAST_ID);
-
   if (!containerAll) return;
   containerAll.textContent = "Loading your appointments…";
 
@@ -597,7 +851,7 @@ if (settingsForm && !settingsForm.dataset.bound) {
     throw new Error(`Expected JSON; got ${ct}. ${txt.slice(0,160)}`);
   };
 
-// Normalize one record {_id, values} -> the shape our renderer expects
+// Normalize one record {_id, values} -> shape renderer expects
 const normalize = (row) => {
   const v = row?.values || {};
 
@@ -619,8 +873,7 @@ const normalize = (row) => {
 
   const serviceName = pick(v, ['Service Name','serviceName','Name','name']) || 'Appointment';
 
-  // --- PRO NAME: search several shapes ---
-  // 1) Simple text fields on the appointment
+  // 1) simple text pro fields
   const proNameFromText = pick(v, [
     'Pro Name','proName',
     'Stylist','stylistName',
@@ -629,265 +882,163 @@ const normalize = (row) => {
     'Provider Name'
   ]);
 
-  // 2) Nested reference like values.Pro = { values: {...} } or { firstName, lastName, name }
+  // 2) nested pro reference
   const proRef = v.Pro || v.Stylist || v.Professional || v['Pro Ref'] || v['Stylist Ref'];
   let proNameFromRef = '';
   if (proRef) {
-    const rv = proRef.values || proRef; // handle both shapes
+    const rv = proRef.values || proRef;
     const fn = rv?.firstName || rv?.['First Name'] || rv?.given_name || '';
     const ln = rv?.lastName  || rv?.['Last Name']  || rv?.family_name || '';
     const nm = rv?.name || rv?.fullName || '';
     proNameFromRef = (fn || ln) ? `${fn} ${ln}`.trim() : (nm || '');
   }
 
-  // 3) Sometimes Business carries a pro name
+  // 3) sometimes Business carries it
   const b = v.Business;
   const proNameFromBiz =
     (b && (b.values?.['Pro Name'] || b.values?.proName || b['Pro Name'] || b.proName)) || '';
 
-// also fall back to the record creator (requires server to populate `createdBy`)
-const creator = row.createdBy;
-const proFromCreator = creator
-  ? (`${creator.firstName || ''} ${creator.lastName || ''}`.trim() || creator.name || '')
-  : '';
+  // 4) fallback: record creator (only if server populates createdBy)
+  const creator = row.createdBy;
+  const proFromCreator = creator
+    ? (`${creator.firstName || ''} ${creator.lastName || ''}`.trim() || creator.name || '')
+    : '';
 
-const proName = (proNameFromText || proNameFromRef || proNameFromBiz || proFromCreator || '').trim();
+  const proName = (proNameFromText || proNameFromRef || proNameFromBiz || proFromCreator || '').trim();
+
+  // slugs for navigation
+  const businessSlug =
+    (b && (b.values?.slug || b.values?.Slug || b.slug || v['Business Slug'])) || '';
+
+  const proSlug =
+    (proRef && (proRef.values?.slug || proRef.values?.Slug || proRef.slug)) || '';
 
   const businessId = (b && (b._id || b)) || '';
   const status = (pick(v, ['Appointment Status','Status','status']) || 'booked');
+
+const rawTime     = time || (startAt ? startAt.slice(11,16) : "");
+const displayTime = rawTime ? to12hSafe(rawTime) : "";
 
   return {
     _id: row._id,
     date,
     time,
+     displayTime,
     duration: dur,
     startAt,
     endAt,
     serviceName,
-    proName,          // <— renderer will use this
+    proName,
     businessId,
     status,
-    _raw: row         // keep raw in case you need to debug later
+    businessSlug,
+    proSlug,
+    _raw: row
   };
-  
 };
 
 
-  async function fetchAndRenderClientAppointments() {
-    try {
-      // Ask generically for the "Appointment" data type; include both createdBy + Client matches
-      const url = `/api/me/records` +
-        `?dataType=${encodeURIComponent('Appointment')}` +
-        `&includeCreatedBy=1&includeRefField=1&myRefField=Client` +
-        `&sort=${encodeURIComponent(JSON.stringify({ 'values.Date': 1, 'values.Time': 1, createdAt: 1 }))}`;
 
+ async function fetchAndRenderClientAppointments() {
+    try {
+      const url = `/api/me/records?dataType=${encodeURIComponent('Appointment')}&includeCreatedBy=1&includeRefField=1&myRefField=Client&sort=${encodeURIComponent(JSON.stringify({ 'values.Date': 1, 'values.Time': 1, createdAt: 1 }))}`;
       const res = await fetch(url, { credentials: 'include', headers: { Accept: 'application/json' } });
       const payload = await safeJson(res);
       const raw = Array.isArray(payload) ? payload : (payload.data || []);
- let list = raw
-  .map(normalize)
-  .filter(a => a.startAt && !Number.isNaN(new Date(a.startAt).getTime()));
 
-// Hide canceled rows
-list = list.filter(a => {
-  const s = String(a.status || "").toLowerCase();
-  const canceledFlag =
-    a._raw?.values?.["is Canceled"] === true ||
-    s === "cancelled" || s === "canceled";
-  return !canceledFlag;
-});
+      let list = raw.map(normalize).filter(a => a.startAt && !Number.isNaN(new Date(a.startAt).getTime()));
 
-list.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+      // hide canceled
+      list = list.filter(a => {
+        const s = String(a.status || "").toLowerCase();
+        const canceledFlag = a._raw?.values?.["is Canceled"] === true || s === "cancelled" || s === "canceled";
+        return !canceledFlag;
+      });
 
+      list.sort((a,b) => new Date(a.startAt) - new Date(b.startAt));
 
-      // Use your existing renderer if present
-      if (typeof window.renderAppointments === 'function') {
-        window.renderAppointments(list);
-      } else {
-        // Fallback minimal render
-        containerAll.innerHTML = list.map(a => `
-          <div class="appointment-card">
-            <div class="appointment-info">
-              <h3>${a.serviceName || 'Appointment'}</h3>
-              <p><strong>Date:</strong> ${a.date}</p>
-              <p><strong>Time:</strong> ${a.time}</p>
-              ${a.duration ? `<p><strong>Duration:</strong> ${a.duration} min</p>` : ''}
-              <p><strong>Status:</strong> ${a.status}</p>
-            </div>
-          </div>
-        `).join('') || "<p>You have no upcoming appointments.</p>";
-      }
+      // ✅ always use the proper renderer (now defined above)
+      window.renderAppointments(list);
     } catch (e) {
       console.error('Appointments load failed:', e);
       containerAll.innerHTML = `<p style="color:red;">Error loading appointments: ${e.message}</p>`;
     }
   }
 
-  // Kick off and expose for refresh after cancel/reschedule
   fetchAndRenderClientAppointments();
   window.fetchAndRenderClientAppointments = fetchAndRenderClientAppointments;
 })();
 
-// =========================================================
-// 4. APPOINTMENT LISTING + CANCEL (delegated)
-// =========================================================
-(function () {
-  const allContainer = document.getElementById("all-appointments");
-  const upcomingContainer = document.getElementById("upcoming-appointments");
-  const pastContainer = document.getElementById("past-appointments");
-  if (!allContainer || !upcomingContainer || !pastContainer) return;
 
-  // Use your formatters if present; otherwise safe fallbacks
-  const fmtDate = (d) =>
-    (typeof window.formatDate === "function")
-      ? window.formatDate(d)
-      : (d ? new Date(d).toLocaleDateString() : "");
-  const fmtTime = (t) =>
-    (typeof window.formatTime === "function")
-      ? window.formatTime(t)
-      : (t || "");
+//Cancel Appointment
+// ===== CANCEL + CARD NAV HANDLER (paste this whole block) =====
 
-  const toStartDate = (appt) => {
-    // Prefer full ISO (start/startAt). Else combine date+time.
-    const iso = appt.start || appt.startAt || null;
-    if (iso) {
-      const d = new Date(iso);
-      if (!Number.isNaN(d.getTime())) return d;
-    }
-    if (appt.date && appt.time) return new Date(`${appt.date}T${appt.time}`);
-    if (appt.date) return new Date(appt.date);
-    return new Date(NaN);
-  };
+// Helper to build API base
+const API_URL = (t) => (window.API ? window.API(t) : `/api/records/${encodeURIComponent(t)}`);
 
-  // Expose render so your fetch code can call it
-  window.renderAppointments = function renderAppointments(appointments) {
-    allContainer.innerHTML = "";
-    upcomingContainer.innerHTML = "";
-    pastContainer.innerHTML = "";
+// Cancel one appointment (client-side)
+async function cancelAppointment(apptId, btn) {
+  if (!apptId) return;
 
-    const now = new Date();
+  // ask once
+  if (!confirm("Cancel this appointment?")) return;
 
-    if (!Array.isArray(appointments) || appointments.length === 0) {
-      allContainer.innerHTML = "<p>You have no upcoming appointments.</p>";
-      return;
-    }
+  // optimistic button state
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Cancelling…";
 
-    appointments.forEach((appt) => {
-      const start = toStartDate(appt);
-      const isValid = !Number.isNaN(start.getTime());
-      const isPast = isValid ? start < now : false;
-
-      // normalize fields (support both your old and normalized shapes)
-      const dateStr = appt.date || (isValid ? start.toISOString().slice(0, 10) : "");
-      const timeStr = appt.time || (isValid ? start.toTimeString().slice(0, 5) : "");
-      const serviceName = appt.serviceName || appt.service?.name || "Appointment";
-      const proName = appt.proName || appt.stylistName || appt.pro?.name || "Unknown Pro";
-      const duration = appt.duration || appt.service?.duration; // may be undefined
-      const businessSlug = appt.businessSlug || appt.business?.slug || "";
-      const apptId = appt._id || appt.id || appt.appointmentId || "";
-
-      const durationLine = duration ? `<p><strong>Duration:</strong> ${duration} minutes</p>` : "";
-      const bizLine = businessSlug
-        ? `<p><strong>Business:</strong> <a href="/${businessSlug}">${businessSlug}</a></p>`
-        : "";
-
-      const actions = !isPast
-        ? `<button class="cancel-appointment-btn" data-id="${apptId}">Cancel</button>`
-        : "";
-
-      const cardHTML = `
-        <div class="appointment-card" data-appt-id="${apptId}">
-          <div class="pro-card">
-            <p><strong>Pro:</strong> ${proName}</p>
-          </div>
-          <div class="appointment-info">
-            <h3>${serviceName}</h3>
-            <p><strong>Date:</strong> ${fmtDate(dateStr)}</p>
-            <p><strong>Time:</strong> ${fmtTime(timeStr)}</p>
-            ${durationLine}
-            ${bizLine}
-          </div>
-          <div class="appointment-actions">
-            ${actions}
-          </div>
-        </div>
-      `;
-
-      // Insert into sections
-      allContainer.insertAdjacentHTML("beforeend", cardHTML);
-      if (isPast) {
-        pastContainer.insertAdjacentHTML("beforeend", cardHTML);
-      } else {
-        upcomingContainer.insertAdjacentHTML("beforeend", cardHTML);
-      }
+  try {
+    // Try direct PATCH on the Appointment record
+    const res = await fetch(`${API_URL("Appointment")}/${encodeURIComponent(apptId)}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        values: { "is Canceled": true, "Appointment Status": "cancelled" }
+      })
     });
-  };
 
-  // ---------- CANCEL (event delegation; set up once) ----------
-  const onClick = async (evt) => {
-    const btn = evt.target.closest(".cancel-appointment-btn");
-    if (!btn) return;
-
-    const appointmentId = btn.dataset.id || btn.closest(".appointment-card")?.dataset.apptId;
-    if (!appointmentId) return;
-
-    if (!confirm("Are you sure you want to cancel this appointment?")) return;
-
-    try {
-  const response = await fetch(
-  `/api/records/${encodeURIComponent("Appointment")}/${encodeURIComponent(appointmentId)}`,
-  {
-    method: "PATCH",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      values: {
-        "is Canceled": true,
-        "Appointment Status": "cancelled",
-      },
-    }),
-  }
-);
-
-
-      const ct = (response.headers.get("content-type") || "").toLowerCase();
-      const result = ct.includes("application/json") ? await response.json() : { message: await response.text() };
-
-      if (response.ok) {
-        alert(result.message || "Appointment canceled.");
-        // Re-fetch and re-render (assumes your fetch function exists globally)
-        if (typeof window.fetchAndRenderClientAppointments === "function") {
-          window.fetchAndRenderClientAppointments();
-        } else {
-          // fallback: remove card from DOM
-          btn.closest(".appointment-card")?.remove();
-        }
-      } else {
-        alert(`Error: ${result.message || "Failed to cancel."}`);
+    // If your backend doesn't allow item PATCH for clients, fall back to a custom route (if you have it)
+    if (!res.ok && (res.status === 403 || res.status === 404)) {
+      const alt = await fetch("/cancel-appointment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ appointmentId: apptId })
+      });
+      if (!alt.ok) {
+        const j = await alt.json().catch(() => ({}));
+        throw new Error(j.message || `Cancel failed (HTTP ${alt.status})`);
       }
-    } catch (err) {
-      console.error("Error cancelling appointment:", err);
-      alert("Failed to cancel appointment. Please try again.");
+    } else if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j.message || `Cancel failed (HTTP ${res.status})`);
     }
-  };
 
-  // attach to a common ancestor (the three containers share the same parent in most layouts)
-  const listRoot = allContainer.parentElement || document;
-  if (!listRoot._cancelDelegationBound) {
-    listRoot.addEventListener("click", onClick);
-    listRoot._cancelDelegationBound = true;
+    // Remove any copies of this card (you render into "all" and also into "upcoming/past")
+    document.querySelectorAll(`.appointment-card[data-appt-id="${apptId}"]`).forEach(n => n.remove());
+
+    // If you exposed the reloader, call it to re-sync
+    if (typeof window.fetchAndRenderClientAppointments === "function") {
+      await window.fetchAndRenderClientAppointments();
+    }
+
+    // Optional toast
+    console.log("[cancel] success", apptId);
+  } catch (err) {
+    alert(err.message || "Could not cancel the appointment.");
+    console.error("[cancel] error", err);
+  } finally {
+    // restore button state (in case DOM still present)
+    if (btn && btn.isConnected) {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
   }
+}
 
-  // If you have reschedule buttons later, you can do a similar delegated handler:
-  // listRoot.addEventListener("click", (e) => {
-  //   const btn = e.target.closest(".reschedule-appointment-btn");
-  //   if (!btn) return;
-  //   // ... open reschedule flow
-  // });
-})();
+
 
 
                                //Upcoming Appointments Tab
@@ -932,10 +1083,55 @@ document.querySelectorAll(".sub-tab-btn").forEach(btn => {
         return `${hour12}:${minute.toString().padStart(2, "0")} ${ampm}`;
     }
 
-    // =========================================================
-    // 6. INITIAL CALLS WHEN DOM IS READY
-    // =========================================================
-    fetchAndRenderClientAppointments(); // Initial load of appointments
+//Helper
+// Parse many forms: "13:45", "1345", "1:45", "12:30 PM", "0000", etc.
+function parseTimeLoose(raw) {
+  if (raw == null) return { h: 0, m: 0 };
+  let s = String(raw).trim();
+
+  // detect AM/PM (optional)
+  const ampmMatch = s.match(/\b(am|pm)\b/i);
+  const hasAMPM   = !!ampmMatch;
+  const isPM      = hasAMPM && /pm/i.test(ampmMatch[1]);
+
+  // keep only digits and a single colon if present
+  s = s.replace(/[^0-9:]/g, '');
+
+  // accept HH:mm, H:mm, HHmm, Hmm, HH
+  let H = 0, M = 0;
+  const m1 = s.match(/^(\d{1,2}):(\d{2})$/);     // "H:MM" or "HH:MM"
+  const m2 = s.match(/^(\d{1,2})(\d{2})$/);      // "HHMM" or "HMM" -> split
+  const m3 = s.match(/^(\d{1,2})$/);             // "HH" -> minutes = 0
+
+  if (m1)      { H = +m1[1]; M = +m1[2]; }
+  else if (m2) { H = +m2[1]; M = +m2[2]; }
+  else if (m3) { H = +m3[1]; M = 0; }
+  else         { H = 0; M = 0; }
+
+  if (hasAMPM) {
+    if (isPM && H !== 12) H += 12;
+    if (!isPM && H === 12) H = 0;
+  }
+
+  H = Math.max(0, Math.min(23, H));
+  M = Math.max(0, Math.min(59, M));
+  return { h: H, m: M };
+}
+
+// For DISPLAY to users (12-hour with AM/PM)
+function to12hSafe(raw) {
+  const { h, m } = parseTimeLoose(raw);
+  const ap = h >= 12 ? 'PM' : 'AM';
+  const hh = ((h + 11) % 12) + 1; // 0->12, 13->1
+  return `${hh}:${String(m).padStart(2,'0')} ${ap}`;
+}
+
+// For setting <input type="time"> value (24-hour HH:mm)
+function toTimeValueSafe(raw) {
+  const { h, m } = parseTimeLoose(raw);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
  
  
     // =========================================================
@@ -998,7 +1194,7 @@ function attachRescheduleListeners() {
       // Set hidden fields
       document.getElementById("reschedule-appointment-id").value = appointmentId;
       document.getElementById("reschedule-date").value = date;
-      document.getElementById("reschedule-time").value = time;
+      document.getElementById("reschedule-time").value = toTimeValueSafe(time);
 
       // Show popup
       document.getElementById("popup-reschedule").style.display = "block";
@@ -1056,7 +1252,7 @@ async function fetchRescheduleSlots() {
   // Show the slots (you can format however you want)
   [...result.morning, ...result.afternoon, ...result.evening].forEach(time => {
     const btn = document.createElement("button");
-    btn.textContent = time;
+    btn.textContent = to12hSafe(time);
     btn.onclick = () => {
       document.getElementById("reschedule-time").value = time;
       highlightSelectedTime(btn); // optional styling function
@@ -1130,7 +1326,7 @@ async function openReschedulePopup(appt) {
 
   // Set date and time
   document.getElementById("reschedule-date").value = appt.date;
-  document.getElementById("reschedule-time").value = appt.time;
+  document.getElementById("reschedule-time").value = toTimeValueSafe(appt.time);
 
   // Fetch categories and services together (use your combined route)
   const res = await fetch(`/get-categories-and-services/${businessId}`);
@@ -1307,7 +1503,7 @@ function renderMyAppointments(appts) {
     const v = r.values || r;
     const name = v.Name || "Appointment";
     const prettyDate = v.Date ? formatDatePretty(v.Date) : "—";
-    const time = v.Time || "—";
+    const time = v.Time ? to12hSafe(v.Time) : "—";
     return `
       <div class="card" style="margin-bottom:8px;">
         <div><strong>${escapeHtml(name)}</strong></div>
