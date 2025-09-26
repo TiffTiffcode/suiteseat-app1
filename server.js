@@ -28,6 +28,52 @@ app.set('trust proxy', 1); // good for Render/proxies
 app.use(express.json());
 app.use(cookieParser());
 
+// Build allowlist from env + known subdomains
+const allowFromEnv = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+const allowStatic = [
+  'http://localhost:3000',
+  'https://www.suiteseat.io',
+  'https://app.suiteseat.io'
+];
+
+const ALLOWED_ORIGINS = Array.from(new Set([...allowStatic, ...allowFromEnv]));
+
+const isProd = process.env.NODE_ENV === 'production';
+
+// CORS (single instance)
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);         // curl/Postman/SSR
+    cb(null, ALLOWED_ORIGINS.includes(origin));
+  },
+  credentials: true
+}));
+
+// Session (single instance)
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'dev-secret',
+  resave: false,
+  saveUninitialized: false,
+  store: MongoStore.create({
+    mongoUrl: process.env.MONGODB_URI,
+    ttl: 60 * 60 * 24 * 30
+  }),
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isProd,
+    domain: isProd ? '.suiteseat.io' : undefined,
+    maxAge: 1000 * 60 * 60 * 24 * 30
+  }
+}));
+
+// ✅ Health route AFTER CORS/session, BEFORE other routes
+app.get('/api/health', (_req, res) => res.json({ ok: true, t: Date.now() }));
+
 const path = require('path');
 const servePublic = (name) => (req, res) =>
   res.sendFile(path.join(__dirname, 'public', `${name}.html`));
@@ -52,6 +98,10 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => console.log('🔌 socket disconnected', socket.id));
 });
 
+// simple liveness endpoint
+app.get('/health', (_req, res) => {
+  res.json({ ok: true, t: Date.now() });
+});
 
 // at top of server
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
@@ -261,6 +311,43 @@ app.get('/api/public/booking-slug/by-business/:id', async (req, res) => {
     res.json({ slug: '' });
   }
 });
+// GET /api/public/business/by-slug/:slug  -> { business: {...} }
+app.get('/api/public/business/by-slug/:slug', async (req, res) => {
+  try {
+    const slug = String(req.params.slug || '').trim();
+    if (!slug) return res.status(400).json({ error: 'missing slug' });
+
+    // find a "Business" record by slug (your values may be under different keys)
+    const biz = await Record.findOne({
+      deletedAt: null,
+      $or: [
+        { 'values.slug': slug },
+        { 'values.Slug': slug },
+        { 'values.Business Slug': slug }
+      ]
+    })
+    .select({ values: 1, _id: 1, createdAt: 1, updatedAt: 1 })
+    .lean();
+
+    if (!biz) return res.status(404).json({ error: 'not_found' });
+
+    const v = biz.values || {};
+    res.json({
+      business: {
+        id: String(biz._id),
+        name: v.businessName || v.name || '',
+        slug: v.slug || v.Slug || v['Business Slug'] || slug,
+        logoUrl: v.logoUrl || v.logo || '',
+        phone: v.phone || v.Phone || '',
+        email: v.email || v.Email || '',
+        address: v.address || v.Address || '',
+      }
+    });
+  } catch (e) {
+    console.error('GET /api/public/business/by-slug failed:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
 
 app.post('/api/uploads/presign', async (req, res) => {
   try {
@@ -291,48 +378,9 @@ app.post('/api/uploads/presign', async (req, res) => {
   }
 });
 
-// Build allowlist from env + known subdomains
-const allowFromEnv = (process.env.CORS_ORIGIN || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
-
-const allowStatic = [
-  'http://localhost:3000',        // Next.js dev
-  'https://www.suiteseat.io',     // booking (Next)
-  'https://app.suiteseat.io'      // dashboard (Next)
-];
 
 
-const ALLOWED_ORIGINS = Array.from(new Set([...allowStatic, ...allowFromEnv]));
-// CORS (single instance)
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // allow curl/Postman/SSR
-    return cb(null, ALLOWED_ORIGINS.includes(origin));
-  },
-  credentials: true
-}));
 
-
-// Session (single instance)
-const isProd = process.env.NODE_ENV === 'production';
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'dev-secret',
-  resave: false,
-  saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI,
-    ttl: 60 * 60 * 24 * 30 // 30 days
-  }),
-  cookie: {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: isProd,                           // HTTPS in prod (requires trust proxy)
-    domain: isProd ? '.suiteseat.io' : undefined, // set ONLY in prod; break on localhost if set
-    maxAge: 1000 * 60 * 60 * 24 * 30
-  }
-}));
 
 ///////////////////////////////////
 // --- Uploads (single source of truth) ---
