@@ -1,4 +1,7 @@
 
+console.log('[booking-js] LIVE v10 loaded');
+console.log('[booking-js] LIVE v11 loaded');
+
 
 // ---- Local date helpers (no timezone drift) ----
 function parseYMDLocal(ymd){ const [y,m,d]=(ymd||"").split("-").map(Number); return new Date(y,(m||1)-1,d||1,0,0,0,0); }
@@ -234,7 +237,147 @@ function showError(msg) {
   if (el) { el.textContent = msg; el.style.display = "block"; } else { alert(msg); }
 }
 
+function coerceText(val) {
+  if (val == null) return "";
+  if (typeof val === "string") return val.trim();
+  if (typeof val === "number") return String(val);
+  if (typeof val === "object") {
+    // common shapes: { label: "..." }, { text: "..." }, { name: "..." }
+    for (const k of ["label", "text", "name", "title", "value"]) {
+      if (typeof val[k] === "string" && val[k].trim()) return val[k].trim();
+    }
+  }
+  return "";
+}
 
+function pickTitleLike(obj = {}) {
+  const v = obj.values || {};
+  const tryKeys = [
+    // flat
+    "name","Name","calendarName","Calendar Name","Calendar name",
+    "title","Title","displayName","Display Name","label","Label",
+    // nested candidates
+    ["name"],["Name"],["title"],["Title"],["displayName"],["Display Name"]
+  ];
+
+  // 1) preferred direct hits (flat or in values)
+  for (const k of tryKeys) {
+    const key = Array.isArray(k) ? k[0] : k;
+    const val = obj[key] ?? v[key];
+    const t = coerceText(val);
+    if (t) return t;
+  }
+
+  // 2) heuristic: any key containing "name" or "title"
+  const scan = (o) => {
+    for (const [k, val] of Object.entries(o)) {
+      if (/name|title/i.test(k)) {
+        const t = coerceText(val);
+        if (t) return t;
+      }
+    }
+    return "";
+  };
+  const h1 = scan(obj);
+  if (h1) return h1;
+  const h2 = scan(v);
+  if (h2) return h2;
+
+  return "Calendar";
+}
+
+// case-insensitive value picker with a few common aliases
+function pick(v = {}, ...keys) {
+  for (const k of keys) {
+    const val = v?.[k];
+    if (val != null && String(val).trim() !== "") return val;
+  }
+  // final case-insensitive sweep
+  const lower = Object.fromEntries(
+    Object.entries(v).map(([k, val]) => [k.toLowerCase(), val])
+  );
+  return (
+    lower["name"] ??
+    lower["calendar name"] ??
+    lower["calendarname"] ??
+    lower["title"] ??
+    lower["label"] ??
+    null
+  );
+}
+
+function calendarTitle(cal) {
+  return (
+    pick(
+      cal,
+      "name",
+      "Name",
+      "calendarName",
+      "Calendar Name",
+      "Calendar name",
+      "title",
+      "Title",
+      "label",
+      "Label"
+    ) || "Calendar"
+  );
+}
+
+function calendarDesc(cal) {
+  return pick(cal, "description", "Description", "details", "Details", "note", "Note");
+}
+
+function toText(v) {
+  if (v == null) return "";
+  if (typeof v === "string") return v.trim();
+  if (typeof v === "number") return String(v);
+  if (typeof v === "object") {
+    for (const k of ["label","text","name","title","value"]) {
+      if (typeof v[k] === "string" && v[k].trim()) return v[k].trim();
+    }
+  }
+  return "";
+}
+function pickCalendarName(obj = {}) {
+  const v = obj.values || obj;
+  return (
+    v.calendarName ??
+    v.name ??
+    v["Calendar Name"] ??
+    v.title ?? v.Title ??
+    v.displayName ?? v["Display Name"] ??
+    "Calendar"
+  );
+}
+
+
+
+
+// in renderCalendars(...)
+const name = pickCalendarName(cal);
+
+function pickCalendarName(doc = {}) {
+  const v = doc.values || doc;
+
+  // direct/common keys
+  const keys = [
+    "name","Name","calendarName","Calendar Name","Calendar name",
+    "title","Title","displayName","Display Name","label","Label"
+  ];
+  for (const k of keys) {
+    const t = toText(doc[k] ?? v[k]);
+    if (t) return t;
+  }
+
+  // heuristic: any key that contains name/title
+  for (const [k, val] of Object.entries(v)) {
+    if (/name|title/i.test(k)) {
+      const t = toText(val);
+      if (t) return t;
+    }
+  }
+  return "Calendar";
+}
 
 // ------- CONFIG / STATE -------
 const API = {
@@ -486,24 +629,67 @@ async function loadCalendarsForBusiness(businessId) {
   return STATE.calendars;
 }
 
+// -------- FETCH CALENDARS (robust + debug) --------
 async function fetchCalendars(key, val) {
-  const url = `/public/records?dataType=Calendar&${encodeURIComponent(key)}=${encodeURIComponent(val)}`;
-  console.log("➡️ calendar fetch:", url);
-  const r = await fetch(url, { headers: { Accept: "application/json" }, credentials: "same-origin" });
-  if (!r.ok) {
-    console.warn("calendar fetch failed:", r.status, await r.text());
-    return [];
+  const pairs = [
+    ['Business',    val],
+    ['businessId',  val],
+    ['ownerId',     STATE?.ownerUserId || null],  // just in case
+  ].filter(([_, v]) => v);
+
+  const headers = { Accept: 'application/json' };
+  for (const [k, v] of pairs) {
+    const url = `/public/records?dataType=Calendar&${encodeURIComponent(k)}=${encodeURIComponent(v)}&ts=${Date.now()}`;
+    console.log('➡️ calendar fetch:', url);
+    try {
+      const r = await fetch(url, { headers, credentials: 'same-origin', cache: 'no-store' });
+      if (!r.ok) continue;
+      const rows = await r.json();
+
+      // Keep raw + flattened for debugging
+      window.__calsRaw = rows;
+
+      if (Array.isArray(rows) && rows.length) {
+        const out = rows.map(doc => ({
+          _id: doc._id,
+          values: doc.values || {},
+          ...(doc.values || {}) // flatten for convenience
+        }));
+
+        // expose flattened array to devtools
+        window.__cals = out;
+
+        console.log('[cal debug] count:', out.length);
+        const first = out[0] || {};
+        console.log('[cal debug] first keys:', Object.keys(first));
+        console.log('[cal debug] first.values keys:', Object.keys(first.values || {}));
+        console.table(out.map(c => ({
+          id: c._id,
+          calendarName: c.calendarName,
+          calName_spaced: c['Calendar Name'],
+          name: c.name
+        })));
+
+        return out;
+      }
+    } catch (e) {
+      console.debug('[cal fetch error]', e);
+    }
   }
-  const rows = await r.json();
-  // flatten values for renderCalendars
-  return Array.isArray(rows) ? rows.map(doc => ({ _id: doc._id, ...(doc.values || {}) })) : [];
+  // nothing found
+  window.__cals = [];
+  return [];
 }
 
 
+// -------- RENDER CALENDARS (uses pickKey) --------
 function renderCalendars(calendars) {
-  const wrap = document.getElementById("calendars");
+  // keep available in console
+  window.__cals = calendars;
+
+  const wrap = document.getElementById('calendars');
   if (!wrap) return;
-  wrap.innerHTML = "";
+  wrap.innerHTML = '';
 
   if (!Array.isArray(calendars) || calendars.length === 0) {
     wrap.innerHTML = `<div class="muted" style="grid-column:1/-1;">No calendars found.</div>`;
@@ -511,16 +697,19 @@ function renderCalendars(calendars) {
   }
 
   calendars.forEach(cal => {
-    const name =
-      cal.name || cal.calendarName || cal["Calendar Name"] || "Calendar";
-    const el = document.createElement("button");
-    el.className = "card card--select";
-    el.style.textAlign = "left";
+    const v = cal.values || cal; // support both shapes
+    const label =
+      pickKey(v, ['calendarName', 'Calendar Name', 'name', 'Name', 'title', 'Title', 'label', 'Label'])
+      || 'Calendar';
+
+    const el = document.createElement('button');
+    el.className = 'card card--select';
+    el.style.textAlign = 'left';
     el.innerHTML = `
-      <div class="card__title">${escapeHtml(name)}</div>
-      <div class="card__sub muted">${cal.description ? escapeHtml(cal.description) : ""}</div>
+      <div class="card__title">${String(label)}</div>
+      <div class="card__sub muted">${v.description ? String(v.description) : ''}</div>
     `;
-    el.addEventListener("click", () => onSelectCalendar(cal));
+    el.addEventListener('click', () => onSelectCalendar(cal));
     wrap.appendChild(el);
   });
 }
@@ -792,22 +981,19 @@ function onSelectCalendar(cal) {
 function pickKey(obj, keys) {
   if (!obj) return undefined;
   for (const k of keys) {
-    if (obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k];
-    // also try a trimmed match for labels with stray spaces
+    if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k];
+    // also try keys with stray spaces
     const t = Object.keys(obj).find(kk => kk.trim() === k);
-    if (t && obj[t] !== undefined && obj[t] !== null && obj[t] !== "") return obj[t];
+    if (t && obj[t] !== undefined && obj[t] !== null && obj[t] !== '') return obj[t];
   }
   return undefined;
 }
-
-function escapeHtml(s=""){
+function escapeHtml(s = "") {
   return String(s)
     .replace(/&/g,"&amp;").replace(/</g,"&lt;")
     .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
     .replace(/'/g,"&#039;");
 }
-
-
 
 
 async function onSelectCategory(categoryId) {

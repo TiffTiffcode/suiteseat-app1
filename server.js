@@ -27,7 +27,7 @@ const app = express();
 app.set('trust proxy', 1); // good for Render/proxies
 app.use(express.json());
 app.use(cookieParser());
-
+app.use(express.static('public')); 
 // Build allowlist from env + known subdomains
 const allowFromEnv = (process.env.CORS_ORIGIN || '')
   .split(',')
@@ -1215,6 +1215,13 @@ app.get('/:slug', (req, res, next) => {
   res.render('booking-page', { slug });
 });
 
+//app.get('/:slug', (req, res, next) => {
+  //const slug = String(req.params.slug || '');
+  // let real API paths/assets pass through
+  //if (slug === 'api' || slug.includes('.')) return next();
+  // redirect to Next frontend
+//  res.redirect(302, `https://www.suiteseat.io/${slug}`);
+//});
 
 // 2) Public records (GET)
 const {
