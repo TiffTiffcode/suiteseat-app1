@@ -3,17 +3,28 @@ console.log('[booking-js] LIVE v10 loaded');
 console.log('[booking-js] LIVE v11 loaded');
 
 
+
+// --------- TOP OF FILE (before anything else) ---------
+var STATE               = (window.STATE               || { businessId: null, selected: { calendarId: null, categoryId: null, serviceIds: [] } });
+var CALENDAR_BY_ID      = (window.CALENDAR_BY_ID      || Object.create(null));
+var CURRENT_CATEGORIES  = (window.CURRENT_CATEGORIES  || []);
+var CURRENT_SERVICES    = (window.CURRENT_SERVICES    || []);
+
+// tiny DOM helpers (if you use them)
+var $  = (sel) => document.querySelector(sel);
+var $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+// also mirror back to window (optional but handy)
+window.STATE = STATE;
+window.CALENDAR_BY_ID = CALENDAR_BY_ID;
+window.CURRENT_CATEGORIES = CURRENT_CATEGORIES;
+window.CURRENT_SERVICES   = CURRENT_SERVICES;
+
 // ---- Local date helpers (no timezone drift) ----
 function parseYMDLocal(ymd){ const [y,m,d]=(ymd||"").split("-").map(Number); return new Date(y,(m||1)-1,d||1,0,0,0,0); }
 function toYMDLocal(date){ const y=date.getFullYear(); const m=String(date.getMonth()+1).padStart(2,"0"); const d=String(date.getDate()).padStart(2,"0"); return `${y}-${m}-${d}`; }
 function addDaysLocal(date,days){ return new Date(date.getFullYear(),date.getMonth(),date.getDate()+(days||0)); }
 
-const STATE = {
-  businessId: null,
-  selected: { calendarId:null, categoryId:null, serviceIds:[], dateISO:null, timeHHMM:null, durationMin:0 },
-  mode: { multiService:false },
-  user: { loggedIn:false, userId:null, role:null },
-};
 
 // URL helper (keep ONE copy of this in the file)
 window.toUrl = window.toUrl || function toUrl(v){
@@ -44,10 +55,12 @@ function extractProUserId(calendarRow) {
 }
 function setSelectedCalendar(calId) {
   STATE.selected.calendarId = calId;
-  const row = window.CALENDAR_BY_ID?.[String(calId)];
-  STATE.selected.proUserId  = row ? extractProUserId(row) : "";
-  console.log("[booking] selected calendar", { calId, proUserId: STATE.selected.proUserId });
+  const cal = (window.CALENDAR_BY_ID || {})[calId];
+  // if you store the Pro on the calendar, capture it here for later:
+  STATE.selected.proUserId =
+    cal?.values?.Pro?._id || cal?.Pro?._id || cal?.values?.proUserId || null;
 }
+
 
 function getClientName(row) {
   const v = row?.values || row || {};
@@ -224,14 +237,7 @@ if (calendars.length === 1) {
 
 
 // ---- helpers ----
-function toUrl(val) {
-  if (!val) return "";
-  if (Array.isArray(val)) val = val[0];
-  if (typeof val === "object") val = val.url || val.path || val.src || val.filename || val.name || "";
-  if (!val) return "";
-  if (/^https?:\/\//i.test(val) || val.startsWith("/")) return val;
-  return `/uploads/${String(val).replace(/^\/+/, "")}`;
-}
+
 function showError(msg) {
   const el = document.getElementById("page-error");
   if (el) { el.textContent = msg; el.style.display = "block"; } else { alert(msg); }
@@ -353,8 +359,6 @@ function pickCalendarName(obj = {}) {
 
 
 
-// in renderCalendars(...)
-const name = pickCalendarName(cal);
 
 function pickCalendarName(doc = {}) {
   const v = doc.values || doc;
@@ -525,9 +529,6 @@ async function getUpcomingHoursRows(businessId, calendarId) {
 
 
 
-// ------- UTIL -------
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 function fmtMoney(n) {
   const num = Number(n);
@@ -598,8 +599,7 @@ function scrollToTimeslots() {
 }
 
 
-// ------- INIT -------
-let CURRENT_SERVICES = [];
+CURRENT_SERVICES.splice(0, CURRENT_SERVICES.length);
 
 // ------- RENDERERS -------
 //New 
@@ -683,36 +683,41 @@ async function fetchCalendars(key, val) {
 
 
 // -------- RENDER CALENDARS (uses pickKey) --------
-function renderCalendars(calendars) {
-  // keep available in console
+function renderCalendars(calendars = []) {
+  // keep in console
   window.__cals = calendars;
 
-  const wrap = document.getElementById('calendars');
-  if (!wrap) return;
-  wrap.innerHTML = '';
+  // rebuild index
+  window.CALENDAR_BY_ID = Object.create(null);
+  calendars.forEach(c => {
+    const id = String(c._id || c.id || c.calendarId);
+    window.CALENDAR_BY_ID[id] = c;
+  });
+
+  const host = document.getElementById('calendars');
+  if (!host) return;
+  host.innerHTML = "";
 
   if (!Array.isArray(calendars) || calendars.length === 0) {
-    wrap.innerHTML = `<div class="muted" style="grid-column:1/-1;">No calendars found.</div>`;
+    host.innerHTML = `<div class="muted" style="grid-column:1/-1;">No calendars found.</div>`;
     return;
   }
 
-  calendars.forEach(cal => {
-    const v = cal.values || cal; // support both shapes
-    const label =
-      pickKey(v, ['calendarName', 'Calendar Name', 'name', 'Name', 'title', 'Title', 'label', 'Label'])
-      || 'Calendar';
-
-    const el = document.createElement('button');
-    el.className = 'card card--select';
-    el.style.textAlign = 'left';
-    el.innerHTML = `
-      <div class="card__title">${String(label)}</div>
-      <div class="card__sub muted">${v.description ? String(v.description) : ''}</div>
+  calendars.forEach((c) => {
+    const name = pickCalendarName(c);               // ✅ c, not cal
+    const desc = c.values?.description || c.description || '';
+    const btn = document.createElement("button");
+    btn.className = "card card--select";
+    btn.style.textAlign = "left";
+    btn.innerHTML = `
+      <div class="card__title">${String(name)}</div>
+      <div class="card__sub muted">${String(desc)}</div>
     `;
-    el.addEventListener('click', () => onSelectCalendar(cal));
-    wrap.appendChild(el);
+    btn.addEventListener("click", () => onSelectCalendar(c));
+    host.appendChild(btn);
   });
 }
+
 async function onSelectCalendar(cal) {
   const calId = String(cal._id || cal.id || cal.calendarId);
 
