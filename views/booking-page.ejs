@@ -7,7 +7,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </head>
 <body>
+  <button id="logout-btn"
+  style="position:fixed;top:8px;right:8px;z-index:99999;padding:6px 10px;">
+  Log out
+</button>
+
+<script>
+document.getElementById('logout-btn')?.addEventListener('click', async () => {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  } finally {
+    // wipe any client state
+    try { localStorage.clear(); sessionStorage.clear(); } catch {}
+    window.BookingApp ??= {}; 
+    window.BookingApp.STATE ??= {};
+    window.BookingApp.STATE.user = { loggedIn:false, hydrated:false, continueAfterLogin:false };
+    location.reload();
+  }
+});
+</script>
+
   <div class="container">
+    <!-- In views/booking-page.ejs (or your page HTML) -->
+<div id="auth-controls" class="auth-controls">
+  <h1>log in</h1>
+  <span id="login-status-text"></span>
+  <button id="logout-btn" class="btn btn--ghost" style="display:none;">Log out</button>
+</div>
+
     <!-- HERO -->
     <section id="hero" class="hero">
       <img id="heroImg" class="hero__img" src="" alt="" />
@@ -19,7 +46,7 @@
 
     <!-- CALENDARS -->
     <section class="section">
-      <h3 class="section__title">Choose a calendar</h3>
+      <h3 class="section__title">Choose a calendardesrgfvas</h3>
       <div id="calendars" class="grid grid--3"></div>
     </section>
 
@@ -64,7 +91,8 @@
     <div id="confirm-summary" class="card"></div>
 
     <div class="sticky-footer">
-      <button id="btn-confirm" class="btn btn--primary btn--full">Book Now</button>
+   <button id="btn-confirm" type="button" class="btn btn--primary btn--full">Book Now</button>
+
     </div>
   </div>
 </section>
@@ -110,8 +138,12 @@
       <div id="success-details" class="form"></div>
       <div class="row" style="margin-top:12px;">
         <button class="btn btn--ghost" onclick="closeSuccess()">Done</button>
-        <button class="btn btn--primary1" onclick="window.location.href='/client-dashboard'">Go to Client Dashboard</button>
-      </div>
+<button class="btn btn--primary1" onclick="redirectToClientDashboard()">
+  Go to Client Dashboard
+</button>
+
+
+</div>
     </div>
   </div>
 
@@ -131,14 +163,111 @@
   .btn.btn--pill { color: #111; background: #e9eef5; }
 </style>
 
-<script src="/socket.io/socket.io.js"></script>
+
  <script src="https://js.stripe.com/v3"></script>
 <!-- views/booking-page.ejs -->
-<script src="/qassets/js/booking-page.js?v=169" defer></script>
+<!-- your compiled bundle -->
+<script src="/qassets/js/booking-page.js?v=172" defer></script>
 
+<!-- IDs used by the creator -->
+<script>
+  console.log('[config] inject IDs');
+  window.CONFIG ??= {};
+  window.CONFIG.dataTypeIds ??= {};
+  window.CONFIG.dataTypeIds.Appointment = '68aec5009f8cc70218a927f7';
+  window.CONFIG.dataTypeIds.Client      = '68aec5439f8cc70218a9280c';
+</script>
 
+<!-- guard #1: block POST /api/records if logged out + inject createdBy when logged in -->
+<script>
+(function gateRecordsPost(){
+  console.log('[guard] install fetch gate');
+  const origFetch = window.fetch;
 
+  function openAuth(){ document.getElementById('authModal')?.classList.add('is-open'); }
+  async function me(){
+    try {
+      const r = await origFetch('/api/users/me?ts='+Date.now(), { credentials:'include' });
+      if (!r.ok) return null;
+      const j = await r.json().catch(()=> ({}));
+      return j?.user?._id || null;
+    } catch { return null; }
+  }
 
+  window.fetch = async function(input, init = {}){
+    const url    = typeof input === 'string' ? input : (input?.url || '');
+    const method = (init.method || 'GET').toUpperCase();
+
+    if (method === 'POST' && url.startsWith('/api/records')) {
+      const userId = await me();
+      if (!userId) {
+        console.warn('[guard] blocked POST /api/records – not logged in');
+        window.BookingApp ??= {}; window.BookingApp.STATE ??= {};
+        window.BookingApp.STATE.user = { ...(window.BookingApp.STATE.user||{}), continueAfterLogin:true };
+        openAuth();
+        throw new Error('LOGIN_REQUIRED');         // prevents the 500
+      }
+      // inject createdBy if missing
+      try {
+        const body = init.body && JSON.parse(init.body);
+        if (body && !body.createdBy) {
+          body.createdBy = userId;
+          init.body = JSON.stringify(body);
+          console.log('[guard] injected createdBy', userId);
+        }
+      } catch {}
+    }
+    return origFetch(input, init);
+  };
+})();
+</script>
+
+<!-- guard #2: stop the Book Now click early if logged out (belt & suspenders) -->
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('[guard] wire #btn-confirm click check');
+  const btn = document.getElementById('btn-confirm');
+  if (!btn || btn.__wiredConfirmGuard) return;
+  btn.__wiredConfirmGuard = true;
+
+  btn.addEventListener('click', (e) => {
+    const uid = window.BookingApp?.STATE?.user?.userId;
+    if (!uid) {
+      console.warn('[guard] open auth before booking');
+      e.preventDefault(); e.stopPropagation();
+      window.BookingApp ??= {}; window.BookingApp.STATE ??= {};
+      window.BookingApp.STATE.user = { ...(window.BookingApp.STATE.user||{}), continueAfterLogin:true };
+      document.getElementById('authModal')?.classList.add('is-open');
+    }
+  }, true);
+});
+</script>
+
+<!-- resume after login -->
+<script>
+(function wireResumeAfterLogin(){
+  console.log('[guard] resume after login installed');
+  const prev = window.onLoginClick;
+  window.onLoginClick = async function(e){
+    try { if (prev) await prev(e); } finally {
+      const ST = window.BookingApp?.STATE;
+      if (ST?.user?.continueAfterLogin) {
+        ST.user.continueAfterLogin = false;
+        console.log('[guard] resuming booking after login');
+        document.getElementById('btn-confirm')?.click();
+      }
+    }
+  };
+})();
+</script>
+<script>
+  window.CONFIG ??= {};
+  window.CONFIG.API_BASE = 'http://localhost:8400';
+  window.CONFIG.dataTypeIds = {
+    Appointment: '68aec5009f8cc70218a927f7',
+    Client:      '68aec5439f8cc70218a9280c'
+  };
+</script>
 
 
 </body>

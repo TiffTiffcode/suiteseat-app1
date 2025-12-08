@@ -1,3 +1,4 @@
+
 //cache from last loadBusinessList() 
 window.businessCache = new Map();
 let editingBusinessId = null;

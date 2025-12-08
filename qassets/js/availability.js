@@ -24,7 +24,7 @@ const LS_CAL = 'lastCalendarId';
 })();
 
 // --- Admin API constants (define once) ---
-const TYPE_UPCOMING = "Upcoming Hours";
+
 
 document.addEventListener("DOMContentLoaded", () => {
   // =========================
@@ -34,6 +34,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const openLoginBtn = document.getElementById("open-login-popup-btn");
   const logoutBtn    = document.getElementById("logout-btn");
   const loginForm    = document.getElementById("login-form");
+  // one place to build API URLs for this page (same-origin)
+const TYPE_UPCOMING = 'Upcoming Hours';
+const API = (type) => `/api/records/${encodeURIComponent(type)}`;
+
+console.log('[availability-js] using relative API paths', { origin: location.origin });
+
 // Put this near the top of your file (above initLogin)
 // ---- Name helper (put above initLogin) ----
 function displayNameFrom(d) {
@@ -1242,17 +1248,20 @@ function populateTimeSelect24(selectId) {
 
     try {
       const whereObj = { "Calendar": calendarId, "Date": ymd };
-      const where = encodeURIComponent(JSON.stringify(whereObj));
+// look up existing row for this (Calendar, Date)
+const where = encodeURIComponent(JSON.stringify({ "Calendar": calendarId, "Date": ymd }));
+const checkUrl = `${API(TYPE_UPCOMING)}?where=${where}&ts=${Date.now()}`;
+console.log('[SAVE] GET', checkUrl);
 
-      // look up existing
-      const check = await fetch(`${API(TYPE_UPCOMING)}?where=${where}&ts=${Date.now()}`, {
-        credentials: 'include',
-        cache: 'no-store'
-      });
-      if (!check.ok) throw new Error(`HTTP ${check.status}`);
-      const existing = await check.json();
+const check = await fetch(checkUrl, { credentials: 'include', cache: 'no-store' });
+const checkText = await check.text().catch(()=>'');
+if (!check.ok) {
+  console.error('[SAVE] GET failed', { status: check.status, body: checkText });
+  throw new Error(`HTTP ${check.status}`);
+}
+const existing = (() => { try { return JSON.parse(checkText); } catch { return []; } })();
+
 const clearing = !start && !end;
-
 const values = clearing
   ? {
       "Business":     businessId,
@@ -1260,7 +1269,7 @@ const values = clearing
       "Date":         ymd,
       "Start":        "",
       "End":          "",
-      "Start Time":   "",   // keep legacy fields in sync
+      "Start Time":   "",
       "End Time":     "",
       "is Available": false
     }
@@ -1270,32 +1279,45 @@ const values = clearing
       "Date":         ymd,
       "Start":        start,
       "End":          end,
-      "Start Time":   start, // keep legacy fields in sync
+      "Start Time":   start,
       "End Time":     end,
       "is Available": true
     };
 
+if (Array.isArray(existing) && existing.length) {
+  const id = existing[0]._id;
+  const patchUrl = `${API(TYPE_UPCOMING)}/${id}`;
+  console.log('[SAVE] PATCH', patchUrl, { values });
 
-      if (Array.isArray(existing) && existing.length) {
-        const id = existing[0]._id;
-        const up = await fetch(`${API(TYPE_UPCOMING)}/${id}`, {
-          method: 'PATCH',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ values })
-        });
-        if (!up.ok) throw new Error(`HTTP ${up.status}`);
-        await up.json();
-      } else {
-        const create = await fetch(API(TYPE_UPCOMING), {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ values })
-        });
-        if (!create.ok) throw new Error(`HTTP ${create.status}`);
-        await create.json();
-      }
+  const up = await fetch(patchUrl, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values })
+  });
+  const upText = await up.text().catch(()=>'');
+  if (!up.ok) {
+    console.error('[SAVE] PATCH failed', { status: up.status, body: upText });
+    throw new Error(`HTTP ${up.status}`);
+  }
+  console.log('[SAVE] PATCH ok', upText);
+} else {
+  const postUrl = API(TYPE_UPCOMING);
+  console.log('[SAVE] POST', postUrl, { values });
+
+  const create = await fetch(postUrl, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values })
+  });
+  const bodyText = await create.text().catch(()=>'');
+  if (!create.ok) {
+    console.error('[SAVE] POST failed', { status: create.status, body: bodyText });
+    throw new Error(`HTTP ${create.status}`);
+  }
+  console.log('[SAVE] POST ok', bodyText);
+}
 
    // update local cache so the cell shows new hours immediately
 window.upcomingHoursMap = window.upcomingHoursMap || {};

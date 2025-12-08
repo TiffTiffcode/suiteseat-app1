@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title><%= title || 'Store' %></title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/qassets/css/store.css">
+</head>
+<body>
+    <h1>This is the ejs file</h1>
+  <main class="container">
+    <header>
+      <h1 class="store-hero"><%= (store && store.values && (store.values.Name || store.values.slug)) || 'Store' %></h1>
+      <% if (store && store.values && store.values.Description) { %>
+        <p class="store-sub"><%= store.values.Description %></p>
+      <% } %>
+    </header>
+
+    <section class="grid">
+      <% (products || []).forEach(function(p){ const v = p.values || {}; %>
+        <article class="store-card">
+          <div class="img"></div>
+          <h3><%= v.Title || '(untitled)' %></h3>
+          <% if (v.Description) { %><p class="store-sub"><%= v.Description %></p><% } %>
+          <div class="row">
+            <strong>$<%= Number((v.SalePrice ?? v.Price) || 0).toFixed(2) %></strong>
+            <button class="btn">Select</button>
+          </div>
+        </article>
+      <% }); %>
+      <% if ((products || []).length === 0) { %>
+        <p class="store-sub">No products yet.</p>
+      <% } %>
+    </section>
+  </main>
+
+  <script src="/qassets/js/store.js" defer></script>
+</body>
+</html>

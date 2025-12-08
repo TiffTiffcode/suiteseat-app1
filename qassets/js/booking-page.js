@@ -2067,25 +2067,46 @@ async function getProRefForSelectedCalendar() {
 }
 
 // Make sure hydrateUser is defined on window so any handler can call it
+// Make sure hydrateUser is defined on window so any handler can call it
 window.hydrateUser = async function hydrateUser() {
   try {
     if (STATE.user?.hydrated) return;
-    const r = await fetch('/api/users/me?ts=' + Date.now(), { credentials: 'include' });
-    if (r.status === 401) { STATE.user = { loggedIn:false, hydrated:true }; return; }
-    const { user } = await r.json();
+
+    const r = await fetch('/api/me?ts=' + Date.now(), {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store'
+    });
+
+    if (!r.ok) {
+      STATE.user = { ...(STATE.user || {}), loggedIn: false, hydrated: true };
+      return;
+    }
+
+    const text = await r.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch { data = {}; }
+
+    const user = data?.user || null;
+    if (!data?.ok || !user) {
+      STATE.user = { ...(STATE.user || {}), loggedIn: false, hydrated: true };
+      return;
+    }
+
     STATE.user = {
       ...(STATE.user || {}),
-      loggedIn: true,
-      hydrated: true,
-      userId:    user._id,
+      loggedIn:  true,
+      hydrated:  true,
+      userId:    user.id || user._id || null,
       email:     (user.email || '').trim(),
       firstName: (user.firstName || '').trim(),
       lastName:  (user.lastName || '').trim(),
       phone:     (user.phone || '').trim(),
       profilePhoto: user.profilePhoto || ''
     };
-  } catch {
-    // leave STATE.user as-is
+  } catch (e) {
+    console.warn('[hydrateUser] failed', e);
+    STATE.user = { ...(STATE.user || {}), loggedIn: false, hydrated: true };
   }
 };
 

@@ -1,133 +1,312 @@
-// server.js
+//C:\Users\tiffa\OneDrive\Desktop\Live\server.js
 require('dotenv').config();
 const express = require('express');
+const app = express();  
 const cors = require('cors');
-const mongoose = require('mongoose'); 
-
+const mongoose = require('mongoose');
 const fs = require('fs');
 const multer = require('multer');
-
-const { connectDB } = require('./utils/db');
-const AuthUser    = require('./models/AuthUser');
-const DataType = require('./models/DataType');
-const Field = require('./models/Field');
-const OptionSet   = require('./models/OptionSet');
-const OptionValue = require('./models/OptionValue');
-const Record      = require('./models/Record');
-const { canon } = require('./utils/canon');
-
-const bcrypt = require('bcryptjs');
-
+const path = require('path');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const MongoStore = require('connect-mongo');
 
-const app = express();
-// Mount uploads at /uploads
-app.set('trust proxy', 1); // good for Render/proxies
-app.use(express.json());
-app.use(cookieParser());
-app.use(express.static('public')); 
-// Build allowlist from env + known subdomains
-const allowFromEnv = (process.env.CORS_ORIGIN || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
+const { connectDB } = require('./utils/db');
+const AuthUser = require('./models/AuthUser');
+const Record   = require('./models/Record');
+const DataType = require('./models/DataType'); 
+const Field = require('./models/Field');
+const OptionSet = require('./models/OptionSet');
+const Hold   = require('./models/Hold');
+const recordsCtrl = require('./controllers/records.js'); // keep .js explicit
+const holdsRouter  = require('./routes/holds');          // routes/holds.js exports a router
+const bcrypt = require('bcryptjs');
 
-const allowStatic = [
+const { createRecord } = require('./controllers/records');
+
+
+
+const { ensureAuthenticated, ensureRole } = require('./middleware/auth');
+
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { v4: uuid } = require('uuid');
+
+
+
+// Guard: fail fast if export shape is wrong
+if (!recordsCtrl || typeof recordsCtrl.createRecord !== 'function') {
+  console.error('controllers/records.js export is', recordsCtrl);
+  process.exit(1);
+}
+
+app.set('trust proxy', 1);
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+
+
+// S3 client (only constructed if you have creds)
+const s3 = (process.env.AWS_REGION && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY)
+  ? new S3Client({
+      region: process.env.AWS_REGION,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      },
+    })
+  : null;
+
+
+
+// ---------- middleware BEFORE routes ----------
+
+
+
+
+// CORS
+const ALLOWED_ORIGINS = [
   'http://localhost:3000',
+  'http://localhost:8400',
   'https://www.suiteseat.io',
-  'https://app.suiteseat.io'
+  'https://app.suiteseat.io',
+  ...(process.env.CORS_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean)
 ];
 
-const ALLOWED_ORIGINS = Array.from(new Set([...allowStatic, ...allowFromEnv]));
-
-const isProd = process.env.NODE_ENV === 'production';
-
-// CORS (single instance)
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true);         // curl/Postman/SSR
-    cb(null, ALLOWED_ORIGINS.includes(origin));
+const corsOptions = {
+  origin(origin, cb) {
+    // allow curl/Postman/no-origin and any whitelisted origin
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    return cb(new Error('Not allowed by CORS'));
   },
   credentials: true
+};
+
+app.use(cors(corsOptions));
+// make all preflights succeed
+app.options('*', cors(corsOptions));
+app.use(cors({
+  origin: 'http://localhost:3000',   // your frontend
+  credentials: true,
 }));
 
-// Session (single instance)
+// put this ABOVE app.use(session(...))
+const isProd = process.env.NODE_ENV === 'production';
+// sanity test route
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'dev-secret',
+  secret: process.env.SESSION_SECRET || 'devsecret',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI,
-    ttl: 60 * 60 * 24 * 30
-  }),
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProd,
-    domain: isProd ? '.suiteseat.io' : undefined,
-    maxAge: 1000 * 60 * 60 * 24 * 30
+    secure: false,        // true behind HTTPS in prod
+    path: '/',            // visible across the whole site
+    maxAge: 1000*60*60*24 // 1 day
   }
 }));
+// after body parsers & session middleware:
+app.use(require('./routes/auth'));
 
-// ✅ Health route AFTER CORS/session, BEFORE other routes
+// ----------hold helper ----------
+
+// helper: HH:MM → minutes
+const toMin = (hhmm) => {
+  const [h,m] = String(hhmm).split(':').map(Number);
+  return (h||0)*60 + (m||0);
+};
+// add minutes, return Date
+function combine(dateISO, hhmm) {
+  const d = new Date(`${dateISO}T00:00:00.000Z`);
+  const [h,m] = hhmm.split(':').map(Number);
+  d.setUTCHours(h||0, m||0, 0, 0);
+  return d;
+}
+function overlap(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && bStart < aEnd;
+}
+
+app.post('/availability/validate', async (req, res) => {
+  try {
+    const { calendarId, dateISO, startHHMM, durationMin, ignoreAppointmentId } = req.body;
+    if (!calendarId || !dateISO || !startHHMM || !Number.isFinite(durationMin)) {
+      return res.status(400).json({ error: 'missing_fields' });
+    }
+
+    const slotStart = combine(dateISO, startHHMM);
+    const slotEnd   = new Date(slotStart.getTime() + durationMin*60*1000);
+
+    // 1) check active holds on same calendar
+    const now = new Date();
+    const holds = await Hold.find({
+      calendarId: String(calendarId),
+      expiresAt: { $gt: now },
+      ...(ignoreAppointmentId ? { appointmentId: { $ne: String(ignoreAppointmentId) } } : {})
+    }).lean();
+
+    if (holds.some(h => overlap(new Date(h.start), new Date(h.end), slotStart, slotEnd))) {
+      return res.status(409).json({ error: 'slot_held' });
+    }
+
+    // 2) check existing appointments on same date/calendar
+    //    (adapt fields to your schema)
+    const sameDayAppts = await Record.find({
+      dataType: 'Appointment',
+      $or: [{ 'values.Calendar': calendarId }, { 'values.calendarId': calendarId }],
+      $expr: { $eq: [ { $substr: ['$values.Date', 0, 10] }, dateISO ] },
+      ...(ignoreAppointmentId ? { _id: { $ne: ignoreAppointmentId } } : {})
+    }, { values: 1 }).lean();
+
+    const taken = sameDayAppts.some(a => {
+      const v = a.values || {};
+      const cancelled = String(v['is Canceled'] ?? v.canceled ?? v.cancelled ?? false).toLowerCase() === 'true';
+      if (cancelled) return false;
+      const s = v.Time || v['Start Time'] || v.start || v.Start;
+      const d = Number(v.Duration ?? v.duration ?? v['Duration (min)'] ?? v.Minutes ?? v['Service Duration'] ?? 0);
+      if (!s || !d) return false;
+      const aStart = combine(dateISO, s);
+      const aEnd   = new Date(aStart.getTime() + d*60*1000);
+      return overlap(slotStart, slotEnd, aStart, aEnd);
+    });
+
+    if (taken) return res.status(409).json({ error: 'slot_taken' });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('[validate] error', e);
+    return res.status(500).json({ error: 'internal' });
+  }
+});
+
+
+
+function stampCreatedBy(req, _res, next) {
+  if (req.method === 'POST' && (req.originalUrl||'').includes('/api/records')) {
+    const uid = req.session?.userId || req.session?.user?._id;
+    req.body ||= {};
+    if (uid && !req.body.createdBy) req.body.createdBy = String(uid);
+  }
+  next();
+}
+app.use(stampCreatedBy);
+
+
+
+// Make sure this is AFTER app.use(session(...)) and BEFORE any routes using it.
+function requireLogin(req, res, next) {
+  const uid = req.session?.userId || req.session?.user?._id || null;
+  if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+  req.session.userId = uid;
+  next();
+}
+
+// helper you already asked about:
+function escapeRegex(s = '') { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+
+
+
+
+// ---- add this near the top of server.js ----
+const TYPE = Object.freeze({
+  Business: 'Business',
+  Calendar: 'Calendar',
+  Category: 'Category',
+  Service: 'Service',
+  Appointment: 'Appointment',
+});
+
+app.post('/api/_ping', (req, res) => {
+  res.json({ ok: true, got: req.body, t: Date.now() });
+});
+
+
+
+// simple request logger (optional)
+app.use((req, _res, next) => {
+  if (req.method === 'POST' && req.path.startsWith('/api/records')) {
+    const uid = req?.session?.userId || req?.user?._id || req?.body?.createdBy || null;
+    req.body ||= {};
+    if (uid && !req.body.createdBy) req.body.createdBy = String(uid);
+  }
+  next();
+});
+
+app.use(async (req, res, next) => {
+  const id = req.session?.userId;
+  if (!id) return next();
+  try {
+    const user = await AuthUser.findById(id).lean();
+    if (!user) {
+      // session cookie points to deleted user; clear it
+      req.session.destroy(() => {});
+      return next();
+    }
+    req.user = { _id: user._id, email: user.email, roles: user.roles };
+  } catch (_) {}
+  next();
+});
+
+app.use((req, res, next) => {
+  // prevent stale JSON in back/forward cache
+  res.setHeader('Cache-Control', 'no-store');
+  // make it easy for the front-end to detect account flips
+  if (req.session?.userId) res.setHeader('X-User-Id', String(req.session.userId));
+  next();
+});
+
+
+// ---------- routes ----------
 app.get('/api/health', (_req, res) => res.json({ ok: true, t: Date.now() }));
 
-const path = require('path');
-const servePublic = (name) => (req, res) =>
-  res.sendFile(path.join(__dirname, 'public', `${name}.html`));
+app.get('/api/whoami', (req, res) => {
+  res.json({
+    userId: req.session?.userId || null,
+    roles:  req.session?.roles  || [],
+    user:   req.session?.user   || null
+  });
+});
+
+function requireAuth(req, res, next) {
+  const uid = req.session && req.session.userId;
+  if (!uid) return res.status(401).json({ error: 'Not logged in' });
+  req.user = { id: String(uid) };
+  next();
+}
+
+// ---------- static / assets ----------
+
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
-
-// Serve CSS and JS from /assets
 app.use('/qassets', express.static(path.join(__dirname, 'qassets')));
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "public", "uploads"))
+);
 
-// at the top with other requires
+
+// ---------- sockets / server listen ----------
 const http = require('http');
 const { Server } = require('socket.io');
-
-// after `const app = express();`
 const server = http.createServer(app);
-
-const io = new Server(server, {
-  cors: { origin: true, credentials: true }
-});
+const io = new Server(server, { cors: { origin: true, credentials: true } });
 
 io.on('connection', (socket) => {
   console.log('🔌 socket connected', socket.id);
   socket.on('disconnect', () => console.log('🔌 socket disconnected', socket.id));
 });
 
-// simple liveness endpoint
-app.get('/health', (_req, res) => {
-  res.json({ ok: true, t: Date.now() });
-});
-
-// at top of server
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { v4: uuid } = require('uuid');
-
-const s3 = new S3Client({ region: process.env.AWS_REGION });
-
-
-
-// --- Helpers (single copy only) ---
-const PUBLIC_TYPES = new Set(["Business","Calendar","Category","Service","Upcoming Hours" ]);
-
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const toObjectIdIfHex = (v) =>
-  (typeof v === "string" && /^[0-9a-fA-F]{24}$/.test(v))
-    ? new mongoose.Types.ObjectId(v)
-    : v;
-
-
-connectDB().catch(err => {
-  console.error('❌ DB connect failed', err);
-  process.exit(1);
-});
-
-
+// ✅ DB connect then start server (single place)
+connectDB()
+  .then(() => {
+    const PORT = process.env.PORT || 8400;
+    server.listen(PORT, () => console.log(`✅ API listening on http://localhost:${PORT}`));
+  })
+  .catch(err => {
+    console.error('❌ DB connect failed', err);
+    process.exit(1);
+  });
 // --- View engine (only if you actually render EJS views) ---
 app.set("view engine", "ejs");
 app.set('views', path.join(__dirname, 'views'));
@@ -145,6 +324,13 @@ const { Resend } = require('resend');
 const { createEvent } = require('ics');
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+
+const publicRoutes = require('./routes/public');
+app.use(publicRoutes);
+
+
+
 
 function to12h(hhmm = '00:00') {
   const [H, M='0'] = String(hhmm).split(':');
@@ -197,6 +383,159 @@ async function sendBookingEmailWithResend({ to, subject, html, icsBuffer, cc=[],
     reply_to: replyTo || undefined,
   });
 }
+// server.js (or routes file on 8400)
+app.post('/api/booking/notify', async (req, res) => {
+  try {
+    // TODO: send email/SMS here (Resend/Nodemailer/Twilio etc.)
+    console.log('[notify] payload:', req.body);
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('[notify] failed', e);
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+// Debug: list normalized slugs for all Business records
+app.get('/debug/business-slugs', async (_req, res) => {
+  try {
+    const dt = await DataType.findOne({ name: /Business/i, deletedAt: null }).lean();
+    const rows = await Record.find({
+      deletedAt: null,
+      $or: [{ dataTypeId: dt?._id || null }, { dataType: 'Business' }, { typeName: 'Business' }],
+    }).select({ values: 1, _id: 1 }).lean();
+
+    const norm = s => String(s||'').trim().toLowerCase()
+      .replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '');
+
+    const list = rows.map(r => {
+      const v = r.values || {};
+      const candidates = [
+        v.slug, v.Slug, v['slug '], v['Slug '],
+        v.businessSlug, v['Business Slug'], v.bookingSlug,
+        v.name, v.Name, v['Business Name']
+      ].filter(Boolean);
+      return {
+        _id: String(r._id),
+        raw: candidates,
+        normalized: candidates.map(norm),
+      };
+    });
+
+    res.json({ count: list.length, list });
+  } catch (e) {
+    console.error('/debug/business-slugs failed', e);
+    res.status(500).json({ error: 'debug_failed' });
+  }
+});
+// One-time helper: set values.slug from Name/Business Name if missing
+app.post('/debug/fix-business-slugs', async (_req, res) => {
+  try {
+    const dt = await DataType.findOne({ name: /Business/i, deletedAt: null }).lean();
+    const rows = await Record.find({
+      deletedAt: null,
+      $or: [{ dataTypeId: dt?._id || null }, { dataType: 'Business' }, { typeName: 'Business' }],
+    }).lean();
+
+    const slugify = s => String(s||'').trim().toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'business';
+
+    let fixed = 0;
+    for (const r of rows) {
+      const v = r.values || {};
+      const hasSlug = v.slug || v.Slug || v['Business Slug'] || v.bookingSlug;
+      if (hasSlug) continue;
+
+      const name = v['Business Name'] || v.Name || v.name || '';
+      if (!name) continue;
+
+      const slug = slugify(name);
+      await Record.updateOne({ _id: r._id }, { $set: { 'values.slug': slug } });
+      fixed++;
+    }
+    res.json({ ok: true, fixed });
+  } catch (e) {
+    console.error('fix-business-slugs failed', e);
+    res.status(500).json({ error: 'fix_failed' });
+  }
+});
+// --- in server.js (near the other admin/public helpers) ---
+app.post('/admin/fix-business-slugs', async (_req, res) => {
+  try {
+    const bizDT = await DataType.findOne({ name: /Business/i }).lean();
+    if (!bizDT) return res.status(404).json({ fixed: 0, note: 'Business datatype not found' });
+
+    const rows = await Record.find({ dataTypeId: bizDT._id, deletedAt: null }).lean();
+    let fixed = 0;
+
+    const slugify = (s='') =>
+      String(s).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'business';
+
+    for (const r of rows) {
+      const v = r.values || {};
+      const existing =
+        v.slug || v.Slug || v['Business Slug'] || v.businessSlug || v.bookingSlug || v['slug '] || v['Slug '];
+
+      if (existing) continue;
+
+      const name =
+        v['Business Name'] || v['Name'] || v['businessName'] || v['name'] || '';
+      if (!name) continue;
+
+      let slug = slugify(name);
+
+      // ensure uniqueness among Businesses
+      let n = 2;
+      const collides = async (s) => !!(await Record.exists({
+        _id: { $ne: r._id },
+        dataTypeId: bizDT._id,
+        deletedAt: null,
+        $or: [
+          { 'values.slug': s }, { 'values.Slug': s }, { 'values.businessSlug': s },
+          { 'values.bookingSlug': s }, { 'values.Business Slug': s }
+        ]
+      }));
+
+      while (await collides(slug)) slug = `${slug}-${n++}`;
+
+      await Record.updateOne({ _id: r._id }, { $set: { 'values.slug': slug } });
+      fixed++;
+    }
+
+    res.json({ ok: true, fixed });
+  } catch (e) {
+    console.error('fix-business-slugs failed:', e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// POST /admin/set-business-slug { name: "trafe", slug: "trafe" }
+app.post('/admin/set-business-slug', async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    const slug = String(req.body?.slug || '').trim().toLowerCase();
+    if (!name || !slug) return res.status(400).json({ ok:false, error:'name and slug required' });
+
+    const bizDT = await DataType.findOne({ name: /Business/i, deletedAt: null }).lean();
+    if (!bizDT) return res.status(404).json({ ok:false, error:'Business datatype not found' });
+
+    const biz = await Record.findOne({
+      dataTypeId: bizDT._id,
+      deletedAt: null,
+      $or: [
+        { 'values.Name': name },
+        { 'values.businessName': name },
+        { 'values["Business Name"]': name }
+      ]
+    }).lean();
+
+    if (!biz) return res.status(404).json({ ok:false, error:'Business not found by name' });
+
+    await Record.updateOne({ _id: biz._id }, { $set: { 'values.slug': slug } });
+    res.json({ ok:true, id: String(biz._id), slug });
+  } catch (e) {
+    console.error('set-business-slug failed', e);
+    res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
 
 
 // Return { slug: "business-slug" } for a Business record by its _id
@@ -348,36 +687,48 @@ app.get('/api/public/business/by-slug/:slug', async (req, res) => {
     res.status(500).json({ error: 'server_error' });
   }
 });
-
-app.post('/api/uploads/presign', async (req, res) => {
+// --- Generate a presigned PUT URL to upload directly to S3 ---
+app.post('/api/uploads/presign', ensureAuthenticated, async (req, res) => {
   try {
+    if (!s3) {
+      // S3 not configured — short-circuit with a helpful error
+      return res.status(503).json({
+        error: 's3_not_configured',
+        message: 'AWS credentials/region not set. Set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET_NAME in .env.',
+      });
+    }
+
     const { filename, contentType } = req.body || {};
-    if (!filename || !contentType) return res.status(400).json({ error: 'filename, contentType required' });
+    if (!filename || !contentType) {
+      return res.status(400).json({ error: 'filename_and_contentType_required' });
+    }
 
-    // create a unique key; you can prefix with userId if you want
-    const ext = filename.split('.').pop();
-    const key = `uploads/${uuid()}.${ext}`;
+    // build a unique object key, keep a simple /uploads/ prefix
+    const ext = filename.includes('.') ? filename.slice(filename.lastIndexOf('.') + 1) : '';
+    const key = `uploads/${uuid()}${ext ? '.' + ext : ''}`;
 
+    // Create the presign command (public-read is optional; remove ACL if your bucket is private)
     const command = new PutObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
       Key: key,
       ContentType: contentType,
-      ACL: 'public-read', // or keep private and serve via CloudFront / signed URLs
+      ACL: 'public-read',
     });
 
-    const url = await getSignedUrl(s3, command, { expiresIn: 60 }); // 60 seconds
-    const publicUrl =
-      process.env.PUBLIC_BASE_URL
-        ? `${process.env.PUBLIC_BASE_URL}/${key}`
-        : `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+    // 60 seconds is usually fine for browser upload
+    const url = await getSignedUrl(s3, command, { expiresIn: 60 });
 
-    res.json({ url, key, publicUrl });
+    // Where the file will be publicly reachable (adjust if using CloudFront)
+    const publicUrl = process.env.PUBLIC_BASE_URL
+      ? `${process.env.PUBLIC_BASE_URL}/${key}`
+      : `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+
+    return res.json({ url, key, publicUrl });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'presign failed' });
+    console.error('presign failed:', e);
+    return res.status(500).json({ error: 'presign_failed' });
   }
 });
-
 
 
 
@@ -496,10 +847,6 @@ app.get("/api/me", (req,res)=>{
     ...req.session.user      // set this during /login
   });
 }); 
-function ensureAuthenticated(req, res, next) {
-  if (req.session?.userId) return next();
-  return res.status(401).json({ error: 'Not logged in' });
-}
 
 // Returns { user: { _id, firstName, lastName, email, phone, address, profilePhoto } }
 app.get('/api/users/me', ensureAuthenticated, async (req, res) => {
@@ -589,6 +936,7 @@ res.json({
 });
 
 
+
 app.post('/signup', async (req, res) => {
   const { firstName, lastName, email, password, phone } = req.body || {};
   if (!email || !password) return res.status(400).json({ message: 'Email & password required' });
@@ -635,38 +983,185 @@ app.post('/signup/pro', async (req, res) => {
     res.status(500).json({ message: e.message });
   }
 });
-app.post('/login', async (req, res) => {
+
+// POST /api/login  — canonical login used everywhere
+//app.post('/api/login', async (req, res) => {
+  //try {
+    //const { email, password } = req.body || {};
+    //const user = await AuthUser.findOne({ email: String(email || '').toLowerCase().trim() });
+   // if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+
+   // const ok = await bcrypt.compare(String(password || ''), user.passwordHash);
+    //if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
+
+    // set session (ObjectId string)
+   // req.session.userId = String(user._id);
+   // req.session.roles  = Array.isArray(user.roles) ? user.roles : [];
+    //req.session.user   = {
+     // _id: String(user._id),
+     // email: user.email,
+    //  firstName: user.firstName || '',
+    //  lastName:  user.lastName  || ''
+   // };
+
+   // await req.session.save(); // ensure cookie is set before response
+
+    //return res.json({
+   //   ok: true,
+   //   user: {
+    //    _id: String(user._id),
+    //    email: user.email,
+    //    firstName: user.firstName || '',
+    //    lastName: user.lastName || ''
+    //  }
+   // });
+ // } catch (e) {
+  //  console.error('[login] error', e);
+ //   return res.status(500).json({ error: 'Login failed' });
+ // }
+//});
+app.post('/api/login', async (req, res) => {
   const { email, password } = req.body || {};
   const user = await AuthUser.findOne({ email: String(email).toLowerCase().trim() });
-  if (!user) return res.status(401).json({ message: 'Invalid email or password' });
+  if (!user) return res.status(401).json({ message: 'Invalid credentials' });
 
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ message: 'Invalid email or password' });
+  const ok = await bcrypt.compare(String(password || ''), user.passwordHash);
+  if (!ok) return res.status(401).json({ message: 'Invalid credentials' });
 
-  req.session.userId = String(user._id);
-  req.session.roles  = Array.isArray(user.roles) ? user.roles : [];
-  req.session.user   = {
-    _id:       String(user._id),
-    email:     user.email,
-    firstName: user.firstName || '',
-    lastName:  user.lastName  || ''
-  };
+  req.session.regenerate(async (err) => {
+    if (err) return res.status(500).json({ message: 'Session error' });
+    req.session.userId = String(user._id);
+    req.session.roles  = Array.isArray(user.roles) ? user.roles : [];
+    req.session.user   = {
+      _id: String(user._id),
+      email: user.email,
+      firstName: user.firstName || '',
+      lastName:  user.lastName  || ''
+    };
+    await req.session.save();
+    res.json({ ok: true, user: req.session.user });
+  });
+});
+
+// after your existing app.post('/signup/pro', ...)
+app.post('/api/signup/pro', (req, res, next) => {
+  req.url = '/signup/pro'; // reuse the same handler
+  next();
+});
+
+// Simple login used by availability admin page
+// Use AuthUser everywhere (not `User`) and always store the _id string
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    const user = await AuthUser.findOne({ email: String(email).toLowerCase().trim() });
+    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+
+    const ok = await bcrypt.compare(String(password || ''), user.passwordHash);
+    if (!ok) return res.status(401).json({ message: 'Invalid credentials' });
+
+    // ✅ store an ObjectId string in the session
+    req.session.userId = String(user._id);
+    req.session.roles  = Array.isArray(user.roles) ? user.roles : ['pro'];
+    req.session.email  = user.email;
+    await req.session.save();
+
+    console.log('[LOGIN] set session', { userId: req.session.userId, roles: req.session.roles });
+    res.json({ loggedIn: true, userId: req.session.userId, email: req.session.email, roles: req.session.roles });
+  } catch (e) {
+    console.error('/login error', e);
+    res.status(500).json({ message: 'Login failed' });
+  }
+});
+
+
+// --- DEV ONLY: turn on admin/pro in the session ---
+app.post('/dev/admin-on', (req, res) => {
+  // use a stable fake ObjectId
+  const fakeId = '000000000000000000000001';
+  req.session.userId = req.session.userId || fakeId;
+  const roles = new Set(req.session.roles || []);
+  roles.add('pro'); roles.add('admin');
+  req.session.roles = [...roles];
+  res.json({ ok: true, userId: req.session.userId, roles: req.session.roles });
+});
+
+// Dev toggle to become admin quickly
+app.get('/dev/admin-on', (req, res) => {
+  if (!req.session?.userId) return res.status(401).json({ ok: false, message: 'Login first' });
+  const roles = new Set(req.session.roles || []);
+  roles.add('pro'); roles.add('admin');
+  req.session.roles = [...roles];
+  res.json({ ok: true, roles: req.session.roles, userId: String(req.session.userId) });
+});
+
+
+// Optional logout
+app.post('/auth/logout', (req, res) => {
+  req.session?.destroy(() => res.json({ ok: true }));
+});
+
+// ME (session probe)
+app.get('/api/me', (req, res) => {
+  const id = req.session?.userId || null;
+  const u  = req.session?.user   || null;
+
+  if (!id || !u) return res.json({ ok: false, user: null });
 
   res.json({
     ok: true,
     user: {
-      _id: user._id,
-      firstName: user.firstName || '',
-      lastName:  user.lastName  || '',
-      email:     user.email,
-      phone:     user.phone
+      _id: String(id),
+      email:     u.email     || '',
+      firstName: u.firstName || '',
+      lastName:  u.lastName  || ''
     }
   });
 });
 
+// server.js (or routes/auth.js)
+app.post('/api/logout', (req, res) => {
+  try {
+    // destroy server session
+    req.session?.destroy?.(() => {});
+    // clear the session cookie
+    res.clearCookie('connect.sid'); // or your custom cookie name
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    return res.status(200).json({ ok: true });
+  }
+});
+// server.js (or routes file)
+app.post('/api/auth/logout', (req, res) => {
+  try {
+    // name is "connect.sid" unless you customized it in session()
+    const cookieName = (req.session?.cookie?.name) || 'connect.sid';
+    req.session?.destroy(() => {
+      res.clearCookie(cookieName, { path: '/' });
+      res.status(200).json({ ok: true });
+    });
+  } catch (e) {
+    res.status(200).json({ ok: true }); // still consider it logged out on client
+  }
+});
 
+app.post('/api/auth/logout', (req, res) => req.session?.destroy(() => res.json({ ok:true })));
 app.get('/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
+});
+
+// Ensure /check-login isn’t cached (so tabs don’t get stale)
+app.get('/check-login', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const u = req.session.user;
+  if (!u) return res.json({ loggedIn:false });
+  res.json({
+    loggedIn: true,
+    userId: u._id || u.id,
+    email: u.email,
+    firstName: u.firstName,
+    name: u.name
+  });
 });
 app.get('/check-login', async (req, res) => {
   try {
@@ -763,6 +1258,20 @@ req.session.user   = { email: auth.email, firstName: auth.firstName || '', lastN
 /////////////////////////////////////////////////////////////////////
    
 //Datatypes
+//helper 
+async function resolveDataTypeId(input) {
+  if (!input) throw new Error('dataType or dataTypeId is required');
+
+  // if already a valid ObjectId, just return it
+  if (mongoose.isValidObjectId(input)) return new mongoose.Types.ObjectId(input);
+
+  // otherwise treat as a name; look up by nameCanonical
+  const dt = await DataType.findOne({ nameCanonical: canon(String(input)) }, { _id: 1 }).lean();
+  if (!dt) throw new Error(`Unknown DataType: ${input}`);
+  return dt._id;
+}
+
+
 app.get('/api/datatypes', async (req, res) => {
   const list = await DataType.find().sort({ createdAt: 1 }).lean();
   res.json(list);
@@ -942,6 +1451,14 @@ app.delete('/api/fields/:id', async (req, res) => {
   }
 });
 
+// Optional: server-side canon fallback (same as client helper)
+function canon(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
 //OptionSet
 
 // ---------- Option Sets ----------
@@ -1008,6 +1525,21 @@ app.delete('/api/optionsets/:id', /*ensureAuthenticated,*/ async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+const OptionSchema = new mongoose.Schema({
+  label: { type: String, required: true },
+  value: { type: String, required: true },
+}, { _id: false });
+
+const OptionSetSchema = new mongoose.Schema({
+  name: { type: String, required: true },      // e.g. "Service Categories"
+  key:  { type: String, unique: true },        // e.g. "service_categories"
+  options: { type: [OptionSchema], default: [] },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'AuthUser' },
+  deletedAt: { type: Date, default: null },
+}, { timestamps: true });
+
+module.exports = mongoose.models.OptionSet || mongoose.model('OptionSet', OptionSetSchema);
 
 // ---------- Option Values ----------
 app.get('/api/optionsets/:id/values', async (req, res) => {
@@ -1129,7 +1661,7 @@ async function ensureUniqueBusinessSlug(base, excludeId = null) {
 // Put this near the BOTTOM of server.js, after static + API + explicit page routes
 const RESERVED = new Set([
   'api','public','uploads','qassets',
-  'admin','signup','login','logout',
+  'admin','signup','login','logout','availability',
   'appointment-settings','appqointment-settings',
   'favicon.ico','robots.txt','sitemap.xml'
 ]);
@@ -1172,41 +1704,92 @@ app.get('/public/records', async (req, res) => {
   }
 });
 
-
+// server.js (top of file, before routes)
+function escapeRegex(s = '') {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 // 1) JSON data for a business booking slug, e.g. /HairEverywhere.json
+// ---- helper once (near top) ----
+function normSlug(s = '') {
+  return String(s).trim().toLowerCase()
+    .replace(/\s+/g, '-')        // spaces -> dashes
+    .replace(/[^a-z0-9\-]/g, ''); // strip weird chars
+}
+
+// GET /:slug.json  — robust business resolver
+// GET /:slug.json  — resolve Business OR Location/Suite Location by slug
 app.get('/:slug.json', async (req, res, next) => {
-  const { slug } = req.params;
-  if (!slug || slug.includes('.') || RESERVED.has(slug)) return next();
+  const raw = (req.params.slug || '').trim();
+  if (!raw || raw.includes('.') || RESERVED.has(raw)) return next();
+
+  const wanted = normSlug(raw);
 
   try {
-    const dt = await DataType.findOne({ name: /Business/i }).lean();
-    if (!dt) return res.status(404).json({ message: 'Business type not found' });
+    // Find all relevant datatypes (Business + Suite/Location variants)
+    const dts = await DataType.find({}).lean();
+    const wantedTypes = dts.filter(dt => {
+      const n = (dt.name || '').toLowerCase();
+      return (
+        n.includes('business') ||
+        n.includes('location') ||
+        n.includes('suite location') ||
+        n.includes('suite')        // 👈 NEW: this catches "Suite"
+      );
+    });
 
-    const re = new RegExp(`^${escapeRegex(slug)}$`, 'i');
+    const typeIds = wantedTypes.map(dt => String(dt._id));
 
-    const biz = await Record.findOne({
+    // For safety also look at explicit dataType string
+    const candidates = await Record.find({
       deletedAt: null,
-      $and: [
-        { $or: [{ dataTypeId: dt._id }, { dataType: 'Business' }] },
-        { $or: [
-       { 'values.slug': re },
-{ 'values.businessSlug': re },
-{ 'values.Slug': re },
-{ 'values.bookingSlug': re },
-{ 'values.Business Slug': re }, // with space/case
-{ 'values.slug ': re },         // trailing space
-{ 'values.Slug ': re },
-        ]},
+      $or: [
+        { dataTypeId: { $in: typeIds } },
+        { dataType: { $in: ['Business', 'Location', 'Suite', 'Suite Location'] } }, // 👈 add "Suite"
       ],
     }).lean();
 
-    if (!biz) return res.status(404).json({ message: 'Business not found' });
-    res.json({ _id: biz._id, values: biz.values || {} });
+    const pick = candidates.find(doc => {
+      const v = doc?.values || {};
+      const fields = [
+        v.slug,
+        v.Slug,
+        v['slug '],
+        v['Slug '],
+        v.businessSlug,
+        v['Business Slug'],
+        v.bookingSlug,
+        v.locationSlug,
+        v['Location Slug'],
+        v['Suite Location Slug'],
+        v.name,
+        v.Name,
+        v['Business Name'],
+        v['Location Name'],
+        v['Suite Location Name'],
+      ];
+      return fields.some(f => f && normSlug(f) === wanted);
+    });
+
+    if (!pick) {
+      return res.status(404).json({ message: 'Record not found', slug: raw });
+    }
+
+    const dtype =
+      pick.dataType ||
+      (wantedTypes.find(dt => String(dt._id) === String(pick.dataTypeId))?.name) ||
+      '';
+
+    return res.json({
+      _id: pick._id,
+      values: pick.values || {},
+      dataTypeName: dtype,  // used by page.tsx
+    });
   } catch (e) {
     console.error('GET /:slug.json error:', e);
-    res.status(500).json({ message: 'Server error' });
+    return res.status(500).json({ message: 'Server error' });
   }
 });
+
 
 // 2) Page render for the booking page (EJS). Front-end JS will call /:slug.json
 app.get('/:slug', (req, res, next) => {
@@ -1232,17 +1815,8 @@ const {
 } = require('./utils/normalize');
 
 // --- Auth helpers (optional) ---
-function ensureAuthenticated(req, res, next) {
-  if (req.session?.userId) return next();
-  res.status(401).json({ error: "Not authenticated" });
-}
-function ensureRole(role) {
-  return (req, res, next) => {
-    const roles = req.session?.roles || [];
-    if (roles.includes(role)) return next();
-    res.status(403).json({ error: "Forbidden" });
-  };
-}
+
+
 
  app.get('/appointment-settings',
   ensureAuthenticated,
@@ -1265,115 +1839,65 @@ async function getDataTypeByName(typeName) {
 
 
 // --- CREATE a record: POST /api/records/:typeName ---
-app.post('/api/records/:typeName', ensureAuthenticated, async (req, res) => {
+const { isValidObjectId } = mongoose;
+
+
+
+app.post('/api/records/:type', ensureAuthenticated, async (req, res) => {
   try {
-    const typeName = req.params.typeName;
-    const dt = await getDataTypeByNameLoose(typeName);
-    if (!dt) return res.status(404).json({ error: `Data type "${typeName}" not found` });
+    const sid = req.session?.userId;
+    const typeName = decodeURIComponent(req.params.type || '').trim();
+    const values = (req.body && req.body.values) || {};
 
-    const rawValues = req.body?.values;
-    if (!rawValues || typeof rawValues !== 'object') {
-      return res.status(400).json({ error: 'values (object) is required' });
-    }
-
-    // --- BUSINESS: create slug before normalize ---
-    if (/^business$/i.test(typeName)) {
-      const explicit = String(rawValues.slug || rawValues.businessSlug || '').trim();
-      const nameForSlug = (
-        rawValues.businessName ||
-        rawValues['Business Name'] ||
-        rawValues.name || ''
-      ).trim();
-
-      const base = slugify(explicit || nameForSlug);
-      if (base) {
-        const unique = await ensureUniqueBusinessSlug(base);
-        rawValues.slug = unique;
-        rawValues.businessSlug = unique; // keep both in sync if you store both
-      }
-    }
-
-    // --- CLIENT: auto-link to a "User" profile (& optionally create login) ---
-    if (/^client$/i.test(typeName)) {
-      const email = String(rawValues.Email || rawValues.email || '').toLowerCase().trim();
-      const first = (rawValues['First Name'] || '').trim();
-      const last  = (rawValues['Last Name']  || '').trim();
-      const phone = (rawValues['Phone Number'] || '').trim();
-
-      const alreadyLinked =
-        rawValues['Linked User'] && (rawValues['Linked User']._id || rawValues['Linked User'].id);
-
-      if (email && !alreadyLinked) {
-        const userDT = await DataType.findOne({ name: 'User', deletedAt: null }).lean();
-
-        let userRec = userDT
-          ? await Record.findOne({
-              dataTypeId: userDT._id,
-              'values.Email': email,
-              deletedAt: null
-            }).lean()
-          : null;
-
-        let auth = await AuthUser.findOne({ email }).lean();
-
-        if (!auth && process.env.AUTO_CREATE_CLIENT_ACCOUNTS === 'true') {
-          const crypto = await import('node:crypto');
-          const tempPass = crypto.randomBytes(9).toString('base64url'); // one-time temp
-          const passwordHash = await bcrypt.hash(tempPass, 12);
-          auth = await AuthUser.create({
-            email,
-            passwordHash,
-            roles: ['client'],
-            firstName: first,
-            lastName:  last
-          });
-          console.log(`[Invite] Created AuthUser for ${email} (id=${auth._id}). Send invite email here.`);
-        }
-
-        if (!userRec && userDT) {
-          const [created] = await Record.create([{
-            dataTypeId: userDT._id,
-            values: {
-              'First Name':   first,
-              'Last Name':    last,
-              'Email':        email,
-              'Phone Number': phone
-            },
-            createdBy: (auth && auth._id) || req.session.userId
-          }]);
-          userRec = created.toObject();
-        }
-
-        if (userRec) {
-          rawValues['Linked User'] = { _id: String(userRec._id) };
-        }
-      }
-    }
-    // Enrich Appointments from Business/Calendar/Client before normalize
-    if (/^appointment$/i.test(typeName)) {
-      await enrichAppointment(rawValues);
-    }
-    // Normalize & persist (make sure slug survives normalization)
-    const values = await normalizeValuesForType(dt._id, rawValues);
-    if (/^business$/i.test(typeName)) {
-      if (rawValues.slug) values.slug = rawValues.slug;
-      if (rawValues.businessSlug) values.businessSlug = rawValues.businessSlug;
-    }
-
-    const created = await Record.create({
-      dataTypeId: dt._id,
-      values,
-      createdBy: req.session.userId
+    console.log('[CREATE] /api/records/:type', {
+      typeName,
+      sid,
+      isValidSid: isValidObjectId(sid),
+      values
     });
 
-    res.status(201).json(created);
+    if (!sid || !isValidObjectId(sid)) {
+      return res.status(401).json({ message: 'Not logged in' });
+    }
+
+    const createdBy = new mongoose.Types.ObjectId(sid);
+
+    // Prefer dataTypeId if your schema uses it
+    let doc = {
+      values,
+      createdBy,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    try {
+      const dt = await getDataTypeByNameLoose(typeName);
+      if (dt?._id) {
+        doc.dataTypeId = dt._id;
+      } else {
+        // fall back to string name
+        doc.dataType = typeName;
+      }
+    } catch (e) {
+      // fallback to string dataType if lookup helper throws
+      doc.dataType = typeName;
+    }
+
+    const rec = await Record.create(doc);
+    console.log('[CREATE] saved', { id: String(rec._id), typeName, used: doc.dataTypeId ? 'dataTypeId' : 'dataType' });
+
+    res.json({ _id: rec._id, values: rec.values });
   } catch (e) {
-    console.error('POST /api/records error:', e);
-    res.status(500).json({ error: e.message });
+    // Print useful validation details
+    if (e?.name === 'ValidationError' && e?.errors) {
+      for (const [k, err] of Object.entries(e.errors)) {
+        console.error(`[VALIDATION] ${k}:`, err?.message);
+      }
+    }
+    console.error('[CREATE] error', e);
+    res.status(500).json({ message: 'Server error' });
   }
 });
-
-
 
 
 // --- GET one record: GET /api/records/:typeName/:id ---
@@ -1432,70 +1956,141 @@ async function canReadAppointment(session, apptRec) {
   return false;
 }
 
-// --- GET one record: GET /api/records/:typeName/:id ---
+// GET one record
 app.get('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) => {
   try {
-    const dt = await getDataTypeByName(req.params.typeName);
+    const dt = await getDataTypeByNameLoose(req.params.typeName);
     if (!dt) return res.status(404).json({ error: `Data type "${req.params.typeName}" not found` });
 
-    // ⚠️ removed createdBy filter here
-    const item = await Record.findOne({
-      _id: req.params.id,
-      dataTypeId: dt._id,
-      deletedAt: null
-    });
+    const roles = req.session?.roles || [];
+    const isPriv = roles.includes('admin');
 
+    const q = { _id: req.params.id, dataTypeId: dt._id, deletedAt: null };
+    if (!isPriv) q.createdBy = req.session.userId;   // owner gate for everyone but admin
+
+    const item = await Record.findOne(q).lean();
     if (!item) return res.status(404).json({ error: 'Not found' });
-
-    // Only gate by role/ownership for Appointments
-    if (/Appointment/i.test(dt.name)) {
-      const ok = await canReadAppointment(req.session, item);
-      if (!ok) return res.status(403).json({ error: 'Forbidden' });
-    } else {
-      // for other types keep creator restriction if you want:
-      if (String(item.createdBy) !== String(req.session.userId) && !(req.session.roles||[]).includes('admin')) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
-    }
-
     res.json(item);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
+app.get('/api/records/:type/:id', async (req, res) => {
+  try {
+    const typeName = String(req.params.type || '').trim();
+    const id = String(req.params.id || '').trim();
 
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+
+    // Try to constrain by dataTypeId when possible
+    let q = { _id: id, deletedAt: null };
+
+    try {
+      const dt = await getDataTypeByNameLoose(typeName);
+      if (dt?._id) q.dataTypeId = dt._id;
+      else q.dataType = typeName; // fallback if your records store dataType string
+    } catch {
+      q.dataType = typeName;
+    }
+
+    const rec = await Record.findOne(q).lean();
+    if (!rec) return res.status(404).json({ error: 'Not found' });
+
+    res.json({ _id: rec._id, values: rec.values || {} });
+  } catch (e) {
+    console.error('GET /api/records/:type/:id error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+// --- GET many by type name
 
 app.get('/api/records/:typeName', ensureAuthenticated, async (req, res) => {
   try {
-    const dt = await getDataTypeByNameLoose(req.params.typeName);
-    if (!dt) return res.status(404).json({ error: `Data type "${req.params.typeName}" not found` });
+    const typeName = String(req.params.typeName || '').trim();
+    const me = req.session?.userId;
 
-    const roles  = req.session?.roles || [];
-    const isPriv = roles.includes('pro') || roles.includes('admin');
+    console.log('[GET] /api/records/:typeName', { typeName, me });
 
-    const base = { dataTypeId: dt._id, deletedAt: null };
-    if (!isPriv) base.createdBy = req.session.userId;
+    if (!typeName) return res.status(400).json({ error: 'Missing typeName' });
 
+    // Resolve DataType by canonical name OR loose match
+    const dt =
+      await DataType.findOne({ nameCanonical: typeName.toLowerCase(), deletedAt: null }).lean()
+      || await DataType.findOne({ name: new RegExp(`^${typeName}$`, 'i'), deletedAt: null }).lean();
+
+    if (!dt) {
+      console.warn('[GET] records: DataType not found:', typeName);
+      return res.status(404).json({ error: `Data type "${typeName}" not found` });
+    }
+
+    // Only return the current user’s docs unless admin
+    const roles   = req.session?.roles || [];
+    const isAdmin = roles.includes('admin');
+
+    const baseQuery = { dataTypeId: dt._id, deletedAt: null, ...(isAdmin ? {} : { createdBy: me }) };
+
+    // Optional simple filters: where, limit, skip, sort (all optional / best-effort)
     let where = {};
-    if (req.query.where) { try { where = JSON.parse(req.query.where); } catch {} }
-    where = await normalizeWhereForType(dt._id, where);
+    try {
+      if (req.query.where) where = JSON.parse(req.query.where);
+    } catch (e) {
+      console.warn('[GET] bad where JSON:', req.query.where);
+    }
 
     let sort = { createdAt: -1 };
-    if (req.query.sort) { try { sort = await normalizeSortForType(dt._id, JSON.parse(req.query.sort)); } catch {} }
+    try {
+      if (req.query.sort) sort = JSON.parse(req.query.sort);
+    } catch (e) {
+      console.warn('[GET] bad sort JSON:', req.query.sort);
+    }
 
     const limit = Math.min(parseInt(req.query.limit || '100', 10), 500);
     const skip  = Math.max(parseInt(req.query.skip  || '0',   10), 0);
 
-    console.log('[GET many]', { type: req.params.typeName, roles, isPriv });
-    const items = await Record.find({ ...base, ...where }).sort(sort).skip(skip).limit(limit);
-    res.json(items);
+    // Flatten {foo:bar} into values.foo filters
+    const valuesFilter = {};
+    for (const [k, v] of Object.entries(where || {})) {
+      if (k.startsWith('values.')) valuesFilter[k] = v;
+      else valuesFilter[`values.${k}`] = v;
+    }
+
+    const q = { ...baseQuery, ...valuesFilter };
+
+    console.log('[GET] query:', q, 'sort:', sort, 'limit:', limit, 'skip:', skip);
+
+    const items = await Record.find(q).sort(sort).skip(skip).limit(limit).lean();
+    return res.json(items);
   } catch (e) {
-    console.error('GET /api/records error:', e);
-    res.status(500).json({ error: e.message });
+    console.error('[GET] /api/records/:typeName error', e);
+    return res.status(500).json({ error: e.message || 'server_error' });
   }
 });
 
+app.get('/api/records', ensureAuthenticated, async (req, res) => {
+  try {
+    const roles  = req.session?.roles || [];
+    const isAdmin = roles.includes('admin');
+
+    const q = { deletedAt: null };
+    if (!isAdmin) q.createdBy = req.session.userId;
+
+    if (req.query.dataTypeId) q.dataTypeId = req.query.dataTypeId;
+    if (req.query.dataType)  q.dataType   = req.query.dataType;
+
+    const biz = String(req.query.businessId || req.query.Business || '').trim();
+    if (biz) {
+      q.$or = [{ 'values.Business': biz }, { 'values.businessId': biz }];
+    }
+
+    const items = await Record.find(q).sort({ createdAt: -1 }).lean();
+    res.json({ ok: true, items });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 function oid(x) {
   if (!x) return null;
@@ -1599,26 +2194,50 @@ async function propagateProfileToCRM({ userId, firstName, lastName, email, phone
 
 
 // --- UPDATE record (replace or merge values): PATCH /api/records/:typeName/:id ---
+// --- UPDATE record (replace or merge values): PATCH /api/records/:typeName/:id ---
 app.patch('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) => {
   try {
     const typeName = req.params.typeName;
-    const dt = await getDataTypeByNameLoose(typeName);
-    if (!dt) return res.status(404).json({ error: `Data type "${typeName}" not found` });
 
-    const roles = req.session?.roles || [];
-    const isPriv = roles.includes('pro') || roles.includes('admin');
+    // find the DataType (Business, Product, Order, etc.)
+    const dt = await getDataTypeByNameLoose(typeName);
+    if (!dt) {
+      return res.status(404).json({ error: `Data type "${typeName}" not found` });
+    }
+
+    const roles  = req.session?.roles || [];
+    const isPriv = roles.includes('admin'); // pro is NOT cross-tenant privileged
 
     const rawValues = req.body?.values || {};
-    if (/^appointment$/i.test(typeName)) await enrichAppointment(rawValues);
+
+    // special enrichment hook for Appointment if you want to keep it
+    if (/^appointment$/i.test(typeName)) {
+      await enrichAppointment(rawValues);
+    }
+
+    // normalize values according to the DataType's fields
     const values = await normalizeValuesForType(dt._id, rawValues);
 
-    const setOps = Object.fromEntries(Object.entries(values).map(([k,v]) => [`values.${k}`, v]));
+    // convert to $set ops: { "values.FieldName": value }
+    const setOps = Object.fromEntries(
+      Object.entries(values).map(([k, v]) => [`values.${k}`, v])
+    );
 
-    const q = { _id: req.params.id, dataTypeId: dt._id, deletedAt: null };
-    if (!isPriv) q.createdBy = req.session.userId;   // gate only non-privileged
+    // base query: same DataType, not deleted, matching id
+    const q = {
+      _id: req.params.id,
+      dataTypeId: dt._id,
+      deletedAt: null,
+    };
+
+    // non-admins can only update their own records
+    if (!isPriv) {
+      q.createdBy = req.session.userId;
+    }
 
     const updated = await Record.findOneAndUpdate(q, { $set: setOps }, { new: true });
     if (!updated) return res.status(404).json({ error: 'Not found' });
+
     res.json(updated);
   } catch (e) {
     console.error('PATCH error', e);
@@ -1713,38 +2332,31 @@ app.get('/get-records/:typeName', ensureAuthenticated, async (req, res) => {
 });
 
 
-                               // ----- Records -----
-app.get('/api/records', async (req, res) => {
-  try {
-    const { dataTypeId } = req.query;
-    const q = dataTypeId ? { dataTypeId } : {};
-    const items = await Record.find(q).sort({ createdAt: -1 });
-    res.json(items);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/records', async (req, res) => {
-  try {
-    const { dataTypeId, values = {} } = req.body;
-    if (!dataTypeId) return res.status(400).json({ error: 'dataTypeId required' });
-    const created = await Record.create({ dataTypeId, values });
-    res.status(201).json(created);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
 
 
+const requireAuthIfYouHaveIt = (req, _res, next) => next(); // temporary pass-through
+
+
+const toObjectId = (v) => {
+  if (!v) return undefined;
+  try { return new mongoose.Types.ObjectId(String(v)); }
+  catch { return undefined; }
+};
+
+
+  
 
 // GET /api/public/booking-page-by-slug/:slug
 app.get('/api/public/booking-page-by-slug/:slug', async (req,res) => {
   try {
     const slug = req.params.slug.trim().toLowerCase();
-    const biz = await Records.findOne({ typeName:'Business', 'values.slug': slug, deletedAt: null });
+    const biz = await Record.findOne({ typeName:'Business', 'values.slug': slug, deletedAt: null });
     if (!biz) return res.status(404).json({ error:'Business not found' });
 
     const bizId = biz._id.toString();
     const selectedId = biz.values?.selectedBookingPageId || '';
 
-    const pages = await Records.find({
+    const pages = await Record.find({
       typeName: 'CustomBookingPage',
       deletedAt: null,
       $or: [
@@ -1917,12 +2529,119 @@ app.post('/api/appointments/book', async (req, res) => {
 
 
 
+                           //LinkPage 
+ 
+// store under /public/uploads/linkpages
+const linkpageStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, path.join(__dirname, "public", "uploads", "linkpages"));
+  },
+  filename: function (req, file, cb) {
+    const ext  = path.extname(file.originalname || "");
+    const name = Date.now() + "-" + Math.round(Math.random() * 1e9) + ext;
+    cb(null, name);
+  },
+});
+
+const uploadLinkpageImage = multer({
+  storage: linkpageStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+});                          
 
 
+// POST /uploads/linkpage-bg
+app.post(
+  "/uploads/linkpage-bg",
+  uploadLinkpageImage.single("image"),
+  (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No file" });
 
+    const url = `/uploads/linkpages/${req.file.filename}`;
+    res.json({ url });
+  }
+);
 
+// POST /uploads/linkpage-header
+app.post(
+  "/uploads/linkpage-header",
+  uploadLinkpageImage.single("image"),
+  (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No file" });
 
+    const url = `/uploads/linkpages/${req.file.filename}`;
+    res.json({ url });
+  }
+);
 
+// PUBLIC: Create an Application record (no login required)
+app.post('/api/public/application', async (req, res) => {
+  try {
+    const values = (req.body && req.body.values) || {};
+
+    console.log('[PUBLIC Application] incoming values:', values);
+
+    const dt = await getDataTypeByNameLoose('Application');
+    if (!dt?._id) {
+      console.warn('[PUBLIC Application] DataType "Application" not found');
+      return res.status(404).json({ message: 'Application DataType not found' });
+    }
+
+    let createdBy = undefined;
+
+    // Try to infer owner from Suite reference
+    let suiteId = null;
+    const suiteRef = values.Suite;
+    if (suiteRef) {
+      if (typeof suiteRef === 'string') {
+        suiteId = suiteRef;
+      } else if (typeof suiteRef === 'object') {
+        suiteId = suiteRef._id || suiteRef.id || null;
+      }
+    }
+
+    if (suiteId && mongoose.isValidObjectId(suiteId)) {
+      try {
+        const suiteDT = await getDataTypeByNameLoose('Suite');
+        if (suiteDT?._id) {
+          const suiteRec = await Record.findOne({
+            _id: suiteId,
+            dataTypeId: suiteDT._id,
+            deletedAt: null
+          }).lean();
+
+          if (suiteRec?.createdBy) {
+            createdBy = suiteRec.createdBy;
+          }
+        }
+      } catch (e) {
+        console.warn('[PUBLIC Application] could not resolve suite owner:', e);
+      }
+    }
+
+    const doc = {
+      values,
+      dataTypeId: dt._id,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    if (createdBy) {
+      doc.createdBy = createdBy;
+    }
+
+    const rec = await Record.create(doc);
+    console.log('[PUBLIC Application] saved', {
+      id: String(rec._id),
+      suiteId,
+      createdBy: rec.createdBy
+    });
+
+    res.json({ _id: rec._id, values: rec.values });
+  } catch (e) {
+    console.error('[PUBLIC Application] error', e);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 
 
@@ -1937,9 +2656,10 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html')); 
 });
 
-  //Signup page 
-app.get('/signup', (req, res) => {
+// --- Signup PAGE (serves the HTML file) ---
+app.get('/signup', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'signup.html'));
+}); // ← this closing brace+paren+semicolon fixes the accidental wrapping
 
 
 // Pretty URLs protected by auth
@@ -1965,6 +2685,8 @@ app.get('/availability', (req, res) => {
 app.get('/calendar', ensureAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'calendar.html'));
 });
+
+
 
 //clients page 
 app.get('/clients', ensureAuthenticated, (req, res) => {
@@ -1994,19 +2716,9 @@ app.get('/client-dashboard', ensureAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'client-dashboard.html'));
 });
 
-});
+
 // Health
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-
-
-///////////////////////////////////////////////////////////////////////////////
-//last code
-// Connect to database
-connectDB();
-const PORT = process.env.PORT || 8400;
-server.listen(PORT, () => console.log('Server running on ' + PORT));
-
-////////////////////////////////////////////////////////////////////////////////
-
+app.use('/api', holdsRouter); 
 

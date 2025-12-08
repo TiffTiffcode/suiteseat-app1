@@ -1,3 +1,4 @@
+//C:\Users\tiffa\OneDrive\Desktop\Live\models\AuthUser.js
 const mongoose = require('mongoose');
 
 const AuthUserSchema = new mongoose.Schema({
