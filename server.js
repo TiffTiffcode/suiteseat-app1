@@ -1888,6 +1888,26 @@ app.post('/api/records/:type', ensureAuthenticated, async (req, res) => {
     const sid = req.session?.userId;
     const typeName = decodeURIComponent(req.params.type || '').trim();
     const values = (req.body && req.body.values) || {};
+    // ---- Auto-slug for Business ----
+    if (typeName.toLowerCase() === 'business') {
+      // pick a base name for the slug
+      const baseName =
+        values.slug ||
+        values.businessSlug ||
+        values.bookingSlug ||
+        values.businessName ||
+        values.name ||
+        values['Business Name'] ||
+        '';
+
+      if (baseName) {
+        const base = slugify(baseName);
+        const unique = await ensureUniqueBusinessSlug(base);
+        values.slug = unique;              // canonical
+        values.businessSlug = unique;      // optional aliases
+        values.bookingSlug = unique;
+      }
+    }
 
     console.log('[CREATE] /api/records/:type', {
       typeName,
@@ -2234,10 +2254,11 @@ async function propagateProfileToCRM({ userId, firstName, lastName, email, phone
 
 
 // --- UPDATE record (replace or merge values): PATCH /api/records/:typeName/:id ---
-// --- UPDATE record (replace or merge values): PATCH /api/records/:typeName/:id ---
 app.patch('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) => {
   try {
-    const typeName = req.params.typeName;
+    const typeNameRaw = req.params.typeName || '';
+    const typeName    = decodeURIComponent(typeNameRaw).trim();
+    const recordId    = req.params.id;
 
     // find the DataType (Business, Product, Order, etc.)
     const dt = await getDataTypeByNameLoose(typeName);
@@ -2249,6 +2270,26 @@ app.patch('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) =>
     const isPriv = roles.includes('admin'); // pro is NOT cross-tenant privileged
 
     const rawValues = req.body?.values || {};
+
+    // 🔹 Auto-slug for Business on UPDATE
+    if (/^business$/i.test(typeName)) {
+      const baseName =
+        rawValues.slug ||
+        rawValues.businessSlug ||
+        rawValues.bookingSlug ||
+        rawValues.businessName ||
+        rawValues.name ||
+        rawValues['Business Name'] ||
+        '';
+
+      if (baseName) {
+        const base   = slugify(baseName);
+        const unique = await ensureUniqueBusinessSlug(base, recordId); // exclude this record
+        rawValues.slug         = unique;   // canonical
+        rawValues.businessSlug = unique;   // optional aliases
+        rawValues.bookingSlug  = unique;
+      }
+    }
 
     // special enrichment hook for Appointment if you want to keep it
     if (/^appointment$/i.test(typeName)) {
@@ -2265,7 +2306,7 @@ app.patch('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) =>
 
     // base query: same DataType, not deleted, matching id
     const q = {
-      _id: req.params.id,
+      _id: recordId,
       dataTypeId: dt._id,
       deletedAt: null,
     };
@@ -2284,6 +2325,7 @@ app.patch('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) =>
     res.status(500).json({ error: e.message });
   }
 });
+
 
 // --- SOFT DELETE record: DELETE /api/records/:typeName/:id ---
 
