@@ -3,6 +3,49 @@ require('dotenv').config();
 const express = require('express');
 const app = express();  
 const cors = require('cors');
+const isProd = process.env.NODE_ENV === 'production';
+
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://www.suiteseat.io',
+  'https://app.suiteseat.io',
+  ...(process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean),
+];
+
+app.set('trust proxy', 1);
+
+// 🔹 CORS – single source of truth
+app.use(
+  cors({
+    origin(origin, callback) {
+      // allow curl/Postman/no-origin
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      console.log('CORS blocked origin:', origin);
+      return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true, // 👈 send cookies across domains
+  })
+);
+
+// Preflight support
+app.options('*', cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
+
 const mongoose = require('mongoose');
 const fs = require('fs');
 const multer = require('multer');
@@ -66,47 +109,37 @@ const s3 = (process.env.AWS_REGION && process.env.AWS_ACCESS_KEY_ID && process.e
 
 
 
-// CORS
-const ALLOWED_ORIGINS = [
-  'http://localhost:3000',
-  'http://localhost:8400',
-  'https://www.suiteseat.io',
-  'https://app.suiteseat.io',
-  ...(process.env.CORS_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean)
-];
 
-const corsOptions = {
-  origin(origin, cb) {
-    // allow curl/Postman/no-origin and any whitelisted origin
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-    return cb(new Error('Not allowed by CORS'));
-  },
-  credentials: true
-};
 
-app.use(cors(corsOptions));
-// make all preflights succeed
-app.options('*', cors(corsOptions));
-app.use(cors({
-  origin: 'http://localhost:3000',   // your frontend
-  credentials: true,
-}));
 
-// put this ABOVE app.use(session(...))
-const isProd = process.env.NODE_ENV === 'production';
 // sanity test route
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'devsecret',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: false,        // true behind HTTPS in prod
-    path: '/',            // visible across the whole site
-    maxAge: 1000*60*60*24 // 1 day
-  }
-}));
+// pick from whatever env var you actually have set
+const mongoSessionUrl =
+  process.env.MONGO_URI ||
+  process.env.MONGODB_URI ||               // Render / Atlas often uses this
+  process.env.DB_URI ||                    // just in case
+  'mongodb://127.0.0.1:27017/suiteseat';   // local fallback
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'devsecret',
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl: mongoSessionUrl,
+      ttl: 14 * 24 * 60 * 60,
+    }),
+    cookie: {
+      httpOnly: true,
+      sameSite: isProd ? 'none' : 'lax',
+      secure: isProd,
+      path: '/',
+      maxAge: 1000 * 60 * 60 * 24,
+    },
+  })
+);
+
+
 // after body parsers & session middleware:
 app.use(require('./routes/auth'));
 
@@ -127,6 +160,10 @@ function combine(dateISO, hhmm) {
 function overlap(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && bStart < aEnd;
 }
+// put this near your other routes
+app.get('/_whoami', (req, res) => {
+  res.json({ ok: true, tag: 'DEC-TEST-1' });
+});
 
 app.post('/availability/validate', async (req, res) => {
   try {
@@ -1106,7 +1143,9 @@ app.get('/api/me', (req, res) => {
   const id = req.session?.userId || null;
   const u  = req.session?.user   || null;
 
-  if (!id || !u) return res.json({ ok: false, user: null });
+  if (!id || !u) {
+    return res.json({ ok: false, user: null });
+  }
 
   res.json({
     ok: true,
@@ -1114,10 +1153,11 @@ app.get('/api/me', (req, res) => {
       _id: String(id),
       email:     u.email     || '',
       firstName: u.firstName || '',
-      lastName:  u.lastName  || ''
-    }
+      lastName:  u.lastName  || '',
+    },
   });
 });
+
 
 // server.js (or routes/auth.js)
 app.post('/api/logout', (req, res) => {
