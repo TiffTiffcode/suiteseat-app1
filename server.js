@@ -2431,28 +2431,62 @@ const toObjectId = (v) => {
 // GET /api/public/booking-page-by-slug/:slug
 app.get('/api/public/booking-page-by-slug/:slug', async (req, res) => {
   try {
-    const slug = String(req.params.slug || '').trim().toLowerCase();
-    if (!slug) return res.status(400).json({ error: 'slug required' });
+    const rawSlug = String(req.params.slug || '').trim();
+    const slugLower = rawSlug.toLowerCase();
+    if (!slugLower) {
+      return res.status(400).json({ error: 'slug required' });
+    }
 
     // 1) Resolve Business DataType
     const bizDT = await getDataTypeByNameLoose('Business');
-    const bizQuery = {
-      deletedAt: null,
-      'values.slug': slug,
-    };
+
+    // First, try a direct Mongo query with a flexible slug match
+    const slugMatchOr = [
+      { 'values.slug': rawSlug },
+      { 'values.slug': slugLower },
+      { 'values.Slug': rawSlug },
+      { 'values.Slug': slugLower },
+      { 'values.Business Slug': rawSlug },
+      { 'values.Business Slug': slugLower },
+    ];
+
+    const baseAnd = [{ $or: slugMatchOr }, { deletedAt: null }];
 
     if (bizDT?._id) {
-      // New-style records (using dataTypeId)
-      bizQuery.dataTypeId = bizDT._id;
+      baseAnd.push({ dataTypeId: bizDT._id });
     } else {
-      // Fallback for any older records that used typeName / dataType
-      bizQuery.$or = [
-        { typeName: 'Business' },
-        { dataType: 'Business' }
-      ];
+      // fallback for any older records that used typeName / dataType
+      baseAnd.push({
+        $or: [{ typeName: 'Business' }, { dataType: 'Business' }],
+      });
     }
 
-    const biz = await Record.findOne(bizQuery).lean();
+    let biz = await Record.findOne({ $and: baseAnd }).lean();
+
+    //  🔁 If that still didn't find anything, do a broader fetch
+    //  and manually match slug like your React code does.
+    if (!biz) {
+      const broadQuery = { deletedAt: null };
+      if (bizDT?._id) {
+        broadQuery.dataTypeId = bizDT._id;
+      } else {
+        broadQuery.$or = [{ typeName: 'Business' }, { dataType: 'Business' }];
+      }
+
+      const candidates = await Record.find(broadQuery)
+        .limit(200)
+        .lean();
+
+      biz =
+        candidates.find((r) => {
+          const v = r?.values || {};
+          const s1 = String(v.slug ?? '').trim().toLowerCase();
+          const s2 = String(v.Slug ?? '').trim().toLowerCase();
+          const s3 = String(r.slug ?? '').trim().toLowerCase();
+          return s1 === slugLower || s2 === slugLower || s3 === slugLower;
+        }) || null;
+    }
+
     if (!biz) {
       return res.status(404).json({ error: 'Business not found' });
     }
@@ -2490,18 +2524,23 @@ app.get('/api/public/booking-page-by-slug/:slug', async (req, res) => {
       String(v.status || '').toLowerCase() === 'published';
 
     const pickTime = (v = {}) =>
-      new Date(v.updatedAt || v.createdAt || biz.updatedAt || biz.createdAt || 0).getTime();
+      new Date(
+        v.updatedAt || v.createdAt || biz.updatedAt || biz.createdAt || 0
+      ).getTime();
 
     const pickJson = (v = {}) =>
       v.pageJson || v.PageJson || v.json || v.JSON || '';
 
     // 1) Prefer selected + published
-    let chosen = pages.find(p => String(p._id) === String(selectedId) && isPublished(p.values || {}));
+    let chosen = pages.find(
+      (p) =>
+        String(p._id) === String(selectedId) && isPublished(p.values || {})
+    );
 
     // 2) Else newest published
     if (!chosen) {
       chosen = pages
-        .filter(p => isPublished(p.values || {}))
+        .filter((p) => isPublished(p.values || {}))
         .sort((a, b) => pickTime(b.values || {}) - pickTime(a.values || {}))[0];
     }
 
