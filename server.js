@@ -2429,60 +2429,104 @@ const toObjectId = (v) => {
   
 
 // GET /api/public/booking-page-by-slug/:slug
-app.get('/api/public/booking-page-by-slug/:slug', async (req,res) => {
+app.get('/api/public/booking-page-by-slug/:slug', async (req, res) => {
   try {
-    const slug = req.params.slug.trim().toLowerCase();
-    const biz = await Record.findOne({ typeName:'Business', 'values.slug': slug, deletedAt: null });
-    if (!biz) return res.status(404).json({ error:'Business not found' });
+    const slug = String(req.params.slug || '').trim().toLowerCase();
+    if (!slug) return res.status(400).json({ error: 'slug required' });
+
+    // 1) Resolve Business DataType
+    const bizDT = await getDataTypeByNameLoose('Business');
+    const bizQuery = {
+      deletedAt: null,
+      'values.slug': slug,
+    };
+
+    if (bizDT?._id) {
+      // New-style records (using dataTypeId)
+      bizQuery.dataTypeId = bizDT._id;
+    } else {
+      // Fallback for any older records that used typeName / dataType
+      bizQuery.$or = [
+        { typeName: 'Business' },
+        { dataType: 'Business' }
+      ];
+    }
+
+    const biz = await Record.findOne(bizQuery).lean();
+    if (!biz) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
 
     const bizId = biz._id.toString();
     const selectedId = biz.values?.selectedBookingPageId || '';
 
-    const pages = await Record.find({
-      typeName: 'CustomBookingPage',
+    // 2) Resolve CustomBookingPage DataType
+    const pageDT = await getDataTypeByNameLoose('CustomBookingPage');
+
+    const pageQuery = {
       deletedAt: null,
       $or: [
         { 'values.businessId': bizId },
-        { 'values.Business': bizId },      // flexible keying
-        { 'values.ownerId': bizId }
-      ]
-    }).lean();
+        { 'values.Business': bizId },
+        { 'values.ownerId': bizId },
+      ],
+    };
 
-    // helpers
-    const isPublished = r => !!pickPublishedFlag(r.values||{});
-    const byBiz = r => true; // already filtered by biz above
-    const byTimeDesc = (a,b) => pickTime(b.values||{}) - pickTime(a.values||{});
-
-    // 1) selected and published?
-    let chosen = pages.find(p => p._id.toString() === selectedId && isPublished(p));
-
-    // 2) else latest published
-    if (!chosen){
-      const published = pages.filter(isPublished).sort(byTimeDesc);
-      chosen = published[0] || null;
+    if (pageDT?._id) {
+      pageQuery.dataTypeId = pageDT._id;
+    } else {
+      pageQuery.$or.push(
+        { typeName: 'CustomBookingPage' },
+        { dataType: 'CustomBookingPage' }
+      );
     }
 
-    if (chosen){
-      const jsonStr = pickJson(chosen.values||{});
+    const pages = await Record.find(pageQuery).lean();
+
+    const isPublished = (v = {}) =>
+      v.published === true ||
+      v.Published === true ||
+      v['is Published'] === true ||
+      String(v.status || '').toLowerCase() === 'published';
+
+    const pickTime = (v = {}) =>
+      new Date(v.updatedAt || v.createdAt || biz.updatedAt || biz.createdAt || 0).getTime();
+
+    const pickJson = (v = {}) =>
+      v.pageJson || v.PageJson || v.json || v.JSON || '';
+
+    // 1) Prefer selected + published
+    let chosen = pages.find(p => String(p._id) === String(selectedId) && isPublished(p.values || {}));
+
+    // 2) Else newest published
+    if (!chosen) {
+      chosen = pages
+        .filter(p => isPublished(p.values || {}))
+        .sort((a, b) => pickTime(b.values || {}) - pickTime(a.values || {}))[0];
+    }
+
+    if (chosen) {
+      const jsonStr = pickJson(chosen.values || {});
       return res.json({
         kind: 'custom',
         businessId: bizId,
         pageId: chosen._id,
-        json: jsonStr
+        json: jsonStr,
       });
     }
 
-    // 3/4) fallbacks
+    // 3) Fallback to template key if no custom page found
     return res.json({
       kind: 'template',
       businessId: bizId,
-      templateKey: biz.values?.templateKey || 'basic'
+      templateKey: biz.values?.templateKey || 'basic',
     });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error:'Resolver failed' });
+    console.error('booking-page-by-slug failed:', e);
+    res.status(500).json({ error: 'Resolver failed' });
   }
 });
+
 
 
 //send email confirmation to clients after booking an appointment
