@@ -317,10 +317,6 @@ function requireAuth(req, res, next) {
 
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 app.use('/qassets', express.static(path.join(__dirname, 'qassets')));
-app.use(
-  "/uploads",
-  express.static(path.join(__dirname, "public", "uploads"))
-);
 
 
 // ---------- sockets / server listen ----------
@@ -367,6 +363,41 @@ const publicRoutes = require('./routes/public');
 app.use(publicRoutes);
 
 
+//Images
+// Images
+const cloudinary = require("cloudinary").v2;
+
+// Cloudinary config (reads your env vars)
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Multer in-memory (NO local disk)
+const uploadMemory = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+});
+
+// Helper: upload a buffer to Cloudinary
+function uploadBufferToCloudinary(buffer, { folder = "suiteseat", public_id } = {}) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id,
+        resource_type: "image",
+      },
+      (err, result) => {
+        if (err) return reject(err);
+        resolve(result); // result.secure_url is what we want to store
+      }
+    );
+
+    stream.end(buffer);
+  });
+}
 
 
 function to12h(hhmm = '00:00') {
@@ -770,29 +801,6 @@ app.post('/api/uploads/presign', ensureAuthenticated, async (req, res) => {
 
 
 
-///////////////////////////////////
-// --- Uploads (single source of truth) ---
-const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-
-// Serve uploaded files at /uploads/<filename>
-app.use('/uploads', express.static(UPLOADS_DIR));
-
-
-// Multer storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname || '');
-    const name = `${Date.now()}-${Math.round(Math.random()*1e9)}${ext}`;
-    cb(null, name);
-  },
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-});
-//////////////////////////////////
 
 
 function objIdFromRef(ref) {
@@ -841,37 +849,41 @@ async function enrichAppointment(rawValues) {
 //User Authentication
 
 // Save profile updates (name, phone, etc.) + optional file upload
-app.post('/update-user-profile',
+app.post(
+  "/update-user-profile",
   ensureAuthenticated,
-  upload.single('profilePhoto'),
+  uploadMemory.single("profilePhoto"),
   async (req, res) => {
     try {
       const userId = req.session.userId;
 
-      // Grab previous values (for prevEmail match)
       const prev = await AuthUser.findById(userId).lean();
 
       const { firstName, lastName, phone, address, email } = req.body;
       const update = { firstName, lastName, phone, address, email };
 
-      if (req.file) {
-        update.profilePhoto = `/uploads/${req.file.filename}`;
+      // ✅ upload to Cloudinary instead of /uploads
+      if (req.file?.buffer) {
+        const uploaded = await uploadBufferToCloudinary(req.file.buffer, {
+          folder: "suiteseat/users",
+          public_id: `user_${userId}_profile`,
+        });
+
+        update.profilePhoto = uploaded.secure_url; // store full https URL
       }
 
       const user = await AuthUser.findByIdAndUpdate(userId, update, { new: true, lean: true });
-      if (!user) return res.status(404).json({ message: 'User not found' });
+      if (!user) return res.status(404).json({ message: "User not found" });
 
-      // 🔁 Propagate to Client & Appointment records
       const stats = await propagateProfileToCRM(
         { userId, firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phone },
         prev?.email
       );
 
-      // Return shape expected by the front-end
       res.json({ user, propagated: stats });
     } catch (e) {
-      console.error('POST /update-user-profile failed:', e);
-      res.status(500).json({ message: 'Server error saving profile' });
+      console.error("POST /update-user-profile failed:", e);
+      res.status(500).json({ message: "Server error saving profile" });
     }
   }
 );
@@ -2349,10 +2361,33 @@ app.delete('/api/records/:typeName/:id', ensureAuthenticated, async (req, res) =
   }
 });
 // 1) Upload a single file, return a URL
-app.post('/api/upload', ensureAuthenticated, upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'file required' });
-  res.json({ url: `/uploads/${req.file.filename}` });
-});
+app.post(
+  "/api/upload",
+  ensureAuthenticated,
+  uploadMemory.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file?.buffer) {
+        return res.status(400).json({ error: "file required" });
+      }
+
+      const result = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder: "suiteseat/uploads", resource_type: "image" },
+          (err, out) => (err ? reject(err) : resolve(out))
+        );
+        stream.end(req.file.buffer);
+      });
+
+      return res.json({ url: result.secure_url, publicId: result.public_id });
+    } catch (e) {
+      console.error("/api/upload cloudinary failed:", e);
+      return res.status(500).json({ error: "upload_failed" });
+    }
+  }
+);
+
+
 
 // 2) Compute a unique slug for a type, scoped to current user
 app.post('/api/slug/:typeName', ensureAuthenticated, async (req, res) => {
@@ -2696,47 +2731,38 @@ app.post('/api/appointments/book', async (req, res) => {
 
                            //LinkPage 
  
-// store under /public/uploads/linkpages
-const linkpageStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, path.join(__dirname, "public", "uploads", "linkpages"));
-  },
-  filename: function (req, file, cb) {
-    const ext  = path.extname(file.originalname || "");
-    const name = Date.now() + "-" + Math.round(Math.random() * 1e9) + ext;
-    cb(null, name);
-  },
-});
-
-const uploadLinkpageImage = multer({
-  storage: linkpageStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-});                          
 
 
 // POST /uploads/linkpage-bg
-app.post(
-  "/uploads/linkpage-bg",
-  uploadLinkpageImage.single("image"),
-  (req, res) => {
-    if (!req.file) return res.status(400).json({ error: "No file" });
+app.post("/uploads/linkpage-bg", uploadMemory.single("image"), async (req, res) => {
+  try {
+    if (!req.file?.buffer) return res.status(400).json({ error: "No file" });
 
-    const url = `/uploads/linkpages/${req.file.filename}`;
-    res.json({ url });
+    const uploaded = await uploadBufferToCloudinary(req.file.buffer, {
+      folder: "suiteseat/linkpages/bg",
+    });
+
+    res.json({ url: uploaded.secure_url });
+  } catch (e) {
+    console.error("/uploads/linkpage-bg failed:", e);
+    res.status(500).json({ error: "upload_failed" });
   }
-);
+});
 
-// POST /uploads/linkpage-header
-app.post(
-  "/uploads/linkpage-header",
-  uploadLinkpageImage.single("image"),
-  (req, res) => {
-    if (!req.file) return res.status(400).json({ error: "No file" });
+app.post("/uploads/linkpage-header", uploadMemory.single("image"), async (req, res) => {
+  try {
+    if (!req.file?.buffer) return res.status(400).json({ error: "No file" });
 
-    const url = `/uploads/linkpages/${req.file.filename}`;
-    res.json({ url });
+    const uploaded = await uploadBufferToCloudinary(req.file.buffer, {
+      folder: "suiteseat/linkpages/header",
+    });
+
+    res.json({ url: uploaded.secure_url });
+  } catch (e) {
+    console.error("/uploads/linkpage-header failed:", e);
+    res.status(500).json({ error: "upload_failed" });
   }
-);
+});
 
 // PUBLIC: Create an Application record (no login required)
 app.post('/api/public/application', async (req, res) => {
